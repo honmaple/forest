@@ -4,11 +4,12 @@ import (
 	"time"
 
 	"bytes"
-	"github.com/honmaple/forest"
-	"github.com/valyala/fasttemplate"
 	"io"
 	"strconv"
 	"sync"
+
+	"github.com/honmaple/forest"
+	"github.com/valyala/fasttemplate"
 )
 
 type (
@@ -49,7 +50,7 @@ func LoggerWithConfig(config *LoggerConfig) forest.HandlerFunc {
 		buf.Reset()
 		defer config.pool.Put(buf)
 
-		if _, err = config.template.ExecuteFunc(buf, func(w io.Writer, tag string) (int, error) {
+		if _, err := config.template.ExecuteFunc(buf, func(w io.Writer, tag string) (int, error) {
 			switch tag {
 			case "remote_addr":
 				return buf.WriteString(req.RemoteAddr)
@@ -87,7 +88,7 @@ func LoggerWithConfig(config *LoggerConfig) forest.HandlerFunc {
 			return err
 		}
 		c.Logger().Println(buf.String())
-		return nil
+		return err
 	}
 }
 

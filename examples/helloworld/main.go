@@ -27,7 +27,7 @@ func main() {
 
 	v2 := r.Host("v2.localhost:8000", "/v2")
 	{
-		v2.GET("/posts/{title:^test-.+?}", func(c forest.Context) error {
+		v2.GET("/posts/{title:^test-\\w+}", func(c forest.Context) error {
 			return c.JSON(http.StatusOK, forest.H{"title": c.Param("title")})
 		})
 	}
@@ -41,7 +41,7 @@ func main() {
 func newGroup() *forest.Group {
 	r := forest.NewGroup()
 	r.GET("/test", func(c forest.Context) error {
-		return c.String(200, "test")
+		return c.String(200, "test\n")
 	})
 	return r
 }

@@ -43,11 +43,14 @@ func NewContext(e *Engine, r *http.Request, w http.ResponseWriter) Context {
 
 func (g *Group) Host(host string, prefix string, middlewares ...HandlerFunc) Router {
 	n := &Group{
-		host:        host,
-		prefix:      g.prefix + prefix,
-		parent:      g,
-		engine:      g.engine,
-		middlewares: mergeMiddlewares(g.middlewares, middlewares),
+		host:         host,
+		prefix:       g.prefix + prefix,
+		parent:       g,
+		engine:       g.engine,
+		middlewares:  mergeHandlers(g.middlewares, middlewares),
+		Logger:       g.Logger,
+		Renderer:     g.Renderer,
+		ErrorHandler: g.ErrorHandler,
 	}
 	if g.children == nil {
 		g.children = make([]*Group, 0)
@@ -73,7 +76,7 @@ func (g *Group) Add(method string, path string, handler HandlerFunc, middlewares
 		group:   g,
 	}
 	route.Name = handlerName(handler)
-	route.Middlewares = mergeMiddlewares(g.middlewares, middlewares)
+	route.Middlewares = mergeHandlers(g.middlewares, middlewares)
 
 	g.engine.addRoute(route)
 	return route
@@ -124,8 +127,19 @@ func (g *Group) Mount(prefix string, group *Group) {
 		r.Middlewares = append(g.middlewares, r.Middlewares...)
 		g.engine.addRoute(r)
 	}
+	group.parent = g
 	group.prefix = prefix + g.prefix
 	group.engine = g.engine
+	if group.Logger == nil {
+		group.Logger = g.Logger
+	}
+	if group.Renderer == nil {
+		group.Renderer = g.Renderer
+	}
+	if group.ErrorHandler == nil {
+		group.ErrorHandler = g.ErrorHandler
+
+	}
 }
 
 func NewHost(host string) *Group {

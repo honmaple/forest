@@ -57,7 +57,7 @@ func (n *npart) Match(part string) (int, bool) {
 			i = len(part)
 		}
 		is := n.regex.FindStringIndex(part[:i])
-		if len(is) == 0 || is[0] > 0 {
+		if len(is) == 0 || is[0] > 0 || is[1] < i {
 			return 0, false
 		}
 		return is[1], true

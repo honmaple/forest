@@ -6,12 +6,8 @@ import (
 )
 
 type (
-	tree struct {
-		roots  map[string]*node
-		routes map[string]*Route
-	}
 	router struct {
-		roots  map[string]*node
+		root   *node
 		routes map[string]*Route
 	}
 	Route struct {
@@ -42,43 +38,24 @@ type (
 )
 
 func (r *router) Add(route *Route) {
-	n, ok := r.roots[route.Method]
-	if !ok {
-		n = &node{}
-		r.roots[route.Method] = n
-	}
-	n.insert(route.Path, 0)
+	r.root.insert(route.Method, route.Path)
 
 	key := route.Method + "-" + route.Path
 	r.routes[key] = route
 }
 
-func (r *router) Find(method string, path string, params map[string]string) *Route {
-	root, ok := r.roots[method]
-	if !ok {
-		return nil
-	}
-	n := root.search(path, params)
+func (r *router) Find(method string, path string, params map[string]string) (*Route, bool) {
+	n := r.root.search(path, params)
 	if n != nil {
 		key := method + "-" + n.path
-		return r.routes[key]
+		return r.routes[key], true
 	}
-	return nil
-}
-
-func (r *router) FindAll(method string) []*node {
-	root, ok := r.roots[method]
-	if !ok {
-		return nil
-	}
-	nodes := make([]*node, 0)
-	root.travel(&nodes)
-	return nodes
+	return nil, false
 }
 
 func newrouter() *router {
 	return &router{
-		roots:  make(map[string]*node),
+		root:   &node{},
 		routes: make(map[string]*Route),
 	}
 }

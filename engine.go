@@ -10,23 +10,43 @@ import (
 )
 
 type (
-	Engine struct {
-		Router
-		pool            sync.Pool
-		routers         map[string]*router
-		Debug           bool
-		NotFoundHandler HandlerFunc
+	rootGroup = Group
+	Engine    struct {
+		*rootGroup
+		pool                    sync.Pool
+		routers                 map[string]*router
+		Debug                   bool
+		NotFoundHandler         HandlerFunc
+		MethodNotAllowedHandler HandlerFunc
+	}
+	Error struct {
+		Code    int         `json:"-"`
+		Message interface{} `json:"message"`
 	}
 	HandlerFunc      func(Context) error
 	ErrorHandlerFunc func(error, Context)
 )
 
 var (
-	ErrorHandler = func(err error, c Context) {
-		c.Logger().Errorln(c.Request().URL.Path, err.Error())
-	}
+	ErrNotFound            = NewError(http.StatusNotFound)
+	ErrMethodNotAllowed    = NewError(http.StatusMethodNotAllowed)
+	ErrInternalServerError = NewError(http.StatusInternalServerError)
+
 	NotFoundHandler = func(c Context) error {
-		return c.String(http.StatusNotFound, "404 NOT FOUND: %s\n", c.Request().URL.Path)
+		return ErrNotFound
+	}
+	MethodNotAllowedHandler = func(c Context) error {
+		return ErrMethodNotAllowed
+	}
+	ErrorHandler = func(err error, c Context) {
+		if err == nil {
+			return
+		}
+		e, ok := err.(*Error)
+		if !ok {
+			e = ErrInternalServerError
+		}
+		c.JSON(e.Code, H{"message": e.Message})
 	}
 )
 
@@ -35,13 +55,14 @@ func New() *Engine {
 		routers: make(map[string]*router),
 		Debug:   true,
 	}
-	e.Router = &Group{
-		engine:       e,
-		middlewares:  make([]HandlerFunc, 0),
-		Logger:       newLogger(),
-		ErrorHandler: ErrorHandler,
+	e.rootGroup = &Group{
+		engine:      e,
+		middlewares: make([]HandlerFunc, 0),
 	}
+	e.Logger = newLogger()
+	e.ErrorHandler = ErrorHandler
 	e.NotFoundHandler = NotFoundHandler
+	e.MethodNotAllowedHandler = MethodNotAllowedHandler
 	e.pool.New = func() interface{} {
 		return NewContext(e, nil, nil)
 	}
@@ -85,20 +106,36 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer e.pool.Put(c)
 
 	router := e.findRouter(r.Host)
-	route := router.Find(r.Method, r.URL.Path, c.params)
-	if route != nil {
+	route, found := router.Find(r.Method, r.URL.EscapedPath(), c.params)
+	if found && route != nil {
 		c.route = route
-		if err := c.Next(); err != nil {
-			route.ErrorHandler(err, c)
-		}
+	} else if found {
+		c.route = &Route{Handler: e.MethodNotAllowedHandler, Middlewares: e.middlewares, group: e.rootGroup}
 	} else {
-		e.NotFoundHandler(c)
+		c.route = &Route{Handler: e.NotFoundHandler, Middlewares: e.middlewares, group: e.rootGroup}
 	}
+	c.Next()
 }
 
 func (e *Engine) Run(addr string) error {
 	server := http.Server{Addr: addr, Handler: e}
 	return server.ListenAndServe()
+}
+
+func (e *Error) Error() string {
+	return fmt.Sprintf("code=%d, message=%v", e.Code, e.Message)
+}
+
+func NewError(code int, message ...interface{}) *Error {
+	e := &Error{
+		Code: code,
+	}
+	if len(message) > 0 {
+		e.Message = message[0]
+	} else {
+		e.Message = http.StatusText(code)
+	}
+	return e
 }
 
 func handlerName(h HandlerFunc) string {
@@ -109,7 +146,7 @@ func handlerName(h HandlerFunc) string {
 	return t.String()
 }
 
-func mergeMiddlewares(m1 []HandlerFunc, m2 []HandlerFunc) []HandlerFunc {
+func mergeHandlers(m1 []HandlerFunc, m2 []HandlerFunc) []HandlerFunc {
 	m := make([]HandlerFunc, 0, len(m1)+len(m2))
 	m = append(m, m1...)
 	m = append(m, m2...)

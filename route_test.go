@@ -1,6 +1,7 @@
 package forest
 
 import (
+	"net/http"
 	"testing"
 
 	testify "github.com/stretchr/testify/assert"
@@ -19,28 +20,33 @@ func TestRoute(t *testing.T) {
 		"/path",
 		"/path/test",
 		"/path/{var1}",
-		"/path/{var1:str}",
 		"/path/{var1:int}",
 		"/path/{var1:int}-{var2:int}",
 		"/path/{var1}/{var2:int}",
-		"/path/{var1:path}/{var2:int}",
+		"/path/{var1:path}-1/{var2:int}",
 		"/path/{var1:int}/{var2:int}/{var3:path}",
 		"/path/{var1:path}/{var2:int}/test/{var3:path}",
+		"/path1/:var1",
+		"/path1/:var1/test/:var2",
+		"/path2/*",
+		"/path2/*/test",
+		"/path3/*var1",
+		"/path3/*var1/test",
 	}
 	for _, url := range urls {
-		root.insert(url, 0)
+		root.insert(http.MethodGet, url)
 	}
 	root.Print(0)
 
 	paths := []testPath{
 		{"/path", "/path", nil},
-		{"/path1/test", "nil", nil},
+		{"/path/test", "/path/test", nil},
 		{
 			"/path/1", "/path/{var1:int}",
 			map[string]string{"var1": "1"},
 		},
 		{
-			"/path/s", "/path/{var1:str}",
+			"/path/s", "/path/{var1}",
 			map[string]string{"var1": "s"},
 		},
 		{
@@ -52,7 +58,7 @@ func TestRoute(t *testing.T) {
 			map[string]string{"var1": "s", "var2": "1"},
 		},
 		{
-			"/path/11c/s/1/2", "/path/{var1:path}/{var2:int}",
+			"/path/11c/s/1-1/2", "/path/{var1:path}-1/{var2:int}",
 			map[string]string{"var1": "11c/s/1", "var2": "2"},
 		},
 		{
@@ -62,6 +68,22 @@ func TestRoute(t *testing.T) {
 		{
 			"/path/s/s/5/test/1/c", "/path/{var1:path}/{var2:int}/test/{var3:path}",
 			map[string]string{"var1": "s/s", "var2": "5", "var3": "1/c"},
+		},
+		{
+			"/path1/test", "/path1/:var1",
+			map[string]string{"var1": "test"},
+		},
+		{
+			"/path1/test/test/1", "/path1/:var1/test/:var2",
+			map[string]string{"var1": "test", "var2": "1"},
+		},
+		{
+			"/path2/s/1", "/path2/*",
+			map[string]string{"*": "s/1"},
+		},
+		{
+			"/path3/s/1/4/c", "/path3/*var1",
+			map[string]string{"var1": "s/1/4/c"},
 		},
 	}
 	for _, p := range paths {

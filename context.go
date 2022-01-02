@@ -178,7 +178,11 @@ func (c *context) Next() error {
 		c.index++
 	}
 	if c.index == len(c.route.Middlewares) {
-		return c.route.Handler(c)
+		if err := c.route.Handler(c); err != nil {
+			c.route.ErrorHandler(err, c)
+			return err
+		}
+		return nil
 	}
 	return nil
 }
