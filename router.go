@@ -6,10 +6,6 @@ import (
 )
 
 type (
-	router struct {
-		root   *node
-		routes map[string]*Route
-	}
 	Route struct {
 		Name        string        `json:"name"`
 		Host        string        `json:"host"`
@@ -20,44 +16,28 @@ type (
 
 		group *Group
 	}
-	Router interface {
-		Host(string, string, ...HandlerFunc) Router
-		Group(string, ...HandlerFunc) Router
-		Mount(string, *Group)
-		Use(...HandlerFunc)
-		GET(string, HandlerFunc, ...HandlerFunc) *Route
-		HEAD(string, HandlerFunc, ...HandlerFunc) *Route
-		POST(string, HandlerFunc, ...HandlerFunc) *Route
-		PUT(string, HandlerFunc, ...HandlerFunc) *Route
-		PATCH(string, HandlerFunc, ...HandlerFunc) *Route
-		DELETE(string, HandlerFunc, ...HandlerFunc) *Route
-		OPTIONS(string, HandlerFunc, ...HandlerFunc) *Route
-		Add(string, string, HandlerFunc, ...HandlerFunc) *Route
-		Any(string, HandlerFunc, ...HandlerFunc) []*Route
-	}
+	Router map[string]*node
 )
 
-func (r *router) Add(route *Route) {
-	r.root.insert(route.Method, route.Path)
-
-	key := route.Method + "-" + route.Path
-	r.routes[key] = route
+func (r Router) Insert(route *Route) {
+	root, ok := r[route.Host]
+	if !ok {
+		root = &node{}
+		r[route.Host] = root
+	}
+	root.insert(route)
 }
 
-func (r *router) Find(method string, path string, params map[string]string) (*Route, bool) {
-	n := r.root.search(path, params)
-	if n != nil {
-		key := method + "-" + n.path
-		return r.routes[key], true
+func (r Router) Find(host, method, path string, c *context) (*Route, bool) {
+	root, ok := r[host]
+	if !ok {
+		return nil, false
 	}
-	return nil, false
+	return root.search(method, path, c)
 }
 
-func newrouter() *router {
-	return &router{
-		root:   &node{},
-		routes: make(map[string]*Route),
-	}
+func newRouter() Router {
+	return make(map[string]*node)
 }
 
 func (r *Route) Logger() Logger {

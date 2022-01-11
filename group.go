@@ -41,7 +41,7 @@ func NewContext(e *Engine, r *http.Request, w http.ResponseWriter) Context {
 	return c
 }
 
-func (g *Group) Host(host string, prefix string, middlewares ...HandlerFunc) Router {
+func (g *Group) Host(host string, prefix string, middlewares ...HandlerFunc) *Group {
 	n := &Group{
 		host:         host,
 		prefix:       g.prefix + prefix,
@@ -59,7 +59,7 @@ func (g *Group) Host(host string, prefix string, middlewares ...HandlerFunc) Rou
 	return n
 }
 
-func (g *Group) Group(prefix string, middlewares ...HandlerFunc) Router {
+func (g *Group) Group(prefix string, middlewares ...HandlerFunc) *Group {
 	return g.Host("", prefix, middlewares...)
 }
 

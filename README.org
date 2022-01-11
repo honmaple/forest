@@ -1,11 +1,18 @@
 ** Route
    #+begin_example
+   /path/:var
+   /path/pre:var
+   /path/:var1/:var2
+   /path/*var
+   /path/pre*var
    /path/{var}
    /path/{var:str}
    /path/{var:int}
    /path/{var:float}
    /path/{var:[0-9]+}
    /path/{var:path}
+   /path/{var1}-{var2}
+   /path/{var1}-{var2}/{var3}
    #+end_example
 
 ** Example

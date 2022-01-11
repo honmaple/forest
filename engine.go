@@ -14,7 +14,7 @@ type (
 	Engine    struct {
 		*rootGroup
 		pool                    sync.Pool
-		routers                 map[string]*router
+		router                  Router
 		Debug                   bool
 		NotFoundHandler         HandlerFunc
 		MethodNotAllowedHandler HandlerFunc
@@ -52,8 +52,8 @@ var (
 
 func New() *Engine {
 	e := &Engine{
-		routers: make(map[string]*router),
-		Debug:   true,
+		router: newRouter(),
+		// Debug:   true,
 	}
 	e.rootGroup = &Group{
 		engine:      e,
@@ -69,30 +69,18 @@ func New() *Engine {
 	return e
 }
 
-func (e *Engine) findRouter(host string) *router {
-	if r, ok := e.routers[host]; ok {
-		return r
-	}
-	return e.routers[""]
-}
-
 func (e *Engine) addRoute(route *Route) {
 	if e.Debug {
 		debugPrint(route)
 	}
 
-	r, ok := e.routers[route.Host]
-	if !ok {
-		r = newrouter()
-		e.routers[route.Host] = r
-	}
-	r.Add(route)
+	e.router.Insert(route)
 	return
 }
 
 func (e *Engine) Routes() []*Route {
 	routes := make([]*Route, 0)
-	for _, router := range e.routers {
+	for _, router := range e.router {
 		for _, r := range router.routes {
 			routes = append(routes, r)
 		}
@@ -105,8 +93,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c.reset(r, w)
 	defer e.pool.Put(c)
 
-	router := e.findRouter(r.Host)
-	route, found := router.Find(r.Method, r.URL.EscapedPath(), c.params)
+	route, found := e.router.Find(r.Host, r.Method, r.URL.EscapedPath(), c)
 	if found && route != nil {
 		c.route = route
 	} else if found {

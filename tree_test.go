@@ -12,10 +12,8 @@ type testPath struct {
 	params      map[string]string
 }
 
-func TestRoute(t *testing.T) {
-	assert := testify.New(t)
-
-	root := node{}
+func TestTree(t *testing.T) {
+	root := &node{}
 	urls := []string{
 		"/path",
 		"/path/test",
@@ -27,17 +25,19 @@ func TestRoute(t *testing.T) {
 		"/path/{var1:int}/{var2:int}/{var3:path}",
 		"/path/{var1:path}/{var2:int}/test/{var3:path}",
 		"/path1/:var1",
-		"/path1/:var1/test/:var2",
+		"/path1/:var1/test/pre:var2",
 		"/path2/*",
 		"/path2/*/test",
 		"/path3/*var1",
 		"/path3/*var1/test",
+		"/path3/pre*var1",
 	}
 	for _, url := range urls {
-		root.insert(http.MethodGet, url)
+		root.insert(&Route{Method: http.MethodGet, Path: url})
 	}
 	root.Print(0)
 
+	assert := testify.New(t)
 	paths := []testPath{
 		{"/path", "/path", nil},
 		{"/path/test", "/path/test", nil},
@@ -74,7 +74,7 @@ func TestRoute(t *testing.T) {
 			map[string]string{"var1": "test"},
 		},
 		{
-			"/path1/test/test/1", "/path1/:var1/test/:var2",
+			"/path1/test/test/pre1", "/path1/:var1/test/pre:var2",
 			map[string]string{"var1": "test", "var2": "1"},
 		},
 		{
@@ -85,16 +85,20 @@ func TestRoute(t *testing.T) {
 			"/path3/s/1/4/c", "/path3/*var1",
 			map[string]string{"var1": "s/1/4/c"},
 		},
+		{
+			"/path3/pre/1/4/c", "/path3/pre*var1",
+			map[string]string{"var1": "/1/4/c"},
+		},
 	}
 	for _, p := range paths {
-		params := make(map[string]string)
-		if v := root.search(p.path, params); v != nil {
-			assert.Equal(p.route, v.path, p.path)
+		ctx := &context{params: make(map[string]string)}
+		if v, found := root.search(http.MethodGet, p.path, ctx); v != nil && found {
+			assert.Equal(p.route, v.Path, p.path)
 		} else {
 			assert.Equal(p.route, "nil", p.path)
 		}
-		if len(params) > 0 {
-			assert.Equal(p.params, params, p.path)
+		if len(ctx.params) > 0 {
+			assert.Equal(p.params, ctx.params, p.path)
 		} else {
 			assert.Nil(p.params)
 		}
