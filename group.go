@@ -36,7 +36,7 @@ var methods = [...]string{
 }
 
 func NewContext(e *Engine, r *http.Request, w http.ResponseWriter) Context {
-	c := &context{engine: e, response: NewResponse(w, e)}
+	c := &context{engine: e, response: NewResponse(w)}
 	c.reset(r, w)
 	return c
 }
@@ -69,14 +69,13 @@ func (g *Group) Use(middlewares ...HandlerFunc) {
 
 func (g *Group) Add(method string, path string, handler HandlerFunc, middlewares ...HandlerFunc) *Route {
 	route := &Route{
-		Host:    g.host,
-		Path:    g.prefix + path,
-		Method:  method,
-		Handler: handler,
-		group:   g,
+		Host:   g.host,
+		Path:   g.prefix + path,
+		Method: method,
+		group:  g,
 	}
 	route.Name = handlerName(handler)
-	route.Middlewares = mergeHandlers(g.middlewares, middlewares)
+	route.Handlers = append(mergeHandlers(g.middlewares, middlewares), handler)
 
 	g.engine.addRoute(route)
 	return route
@@ -124,7 +123,7 @@ func (g *Group) Mount(prefix string, group *Group) {
 	}
 	for _, r := range group.engine.Routes() {
 		r.Path = prefix + r.Path
-		r.Middlewares = append(g.middlewares, r.Middlewares...)
+		r.Handlers = append(g.middlewares, r.Handlers...)
 		g.engine.addRoute(r)
 	}
 	group.parent = g
@@ -143,16 +142,20 @@ func (g *Group) Mount(prefix string, group *Group) {
 }
 
 func NewHost(host string) *Group {
-	return &Group{
+	g := &Group{
 		host:        host,
 		engine:      New(),
 		middlewares: make([]HandlerFunc, 0),
 	}
+	g.engine.Debug = false
+	return g
 }
 
 func NewGroup() *Group {
-	return &Group{
+	g := &Group{
 		engine:      New(),
 		middlewares: make([]HandlerFunc, 0),
 	}
+	g.engine.Debug = false
+	return g
 }

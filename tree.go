@@ -34,11 +34,11 @@ type (
 	node struct {
 		prefix   string
 		kind     uint8
-		pname    string
 		ptype    string
 		regex    *regexp.Regexp
 		children [akind + 1]nodes
-		routes   map[string]*Route
+		// routes   map[string]*Route
+		routes Routes
 	}
 	nodes []*node
 )
@@ -56,29 +56,6 @@ func (ns nodes) Less(i, j int) bool {
 		return ptypes[ni.ptype] < ptypes[nj.ptype]
 	}
 	return false
-}
-
-func (ns nodes) findChild(label byte) *node {
-	num := len(ns)
-	if num == 0 {
-		return nil
-	}
-	idx := 0
-	i, j := 0, num-1
-	for i <= j {
-		idx = i + (j-i)/2
-		if label > ns[idx].prefix[0] {
-			i = idx + 1
-		} else if label < ns[idx].prefix[0] {
-			j = idx - 1
-		} else {
-			i = num
-		}
-	}
-	if ns[idx].prefix[0] != label {
-		return nil
-	}
-	return ns[idx]
 }
 
 func commonPrefix(a, b string) int {
@@ -116,21 +93,22 @@ func (s *node) insertStatic(path string, route *Route) *node {
 				root = child
 				continue
 			}
-			child := newTree(skind, "", "", prefix, route)
+			child := newNode(skind, "", prefix, route)
 			root.addChild(child)
 			return child
 		}
 
 		// 有相同前缀, 但节点不存在, 需要分裂, 父节点变子节点
 		if cl < pl {
-			child := newTree(root.kind, root.pname, root.ptype, root.prefix[cl:], nil)
+			child := newNode(root.kind, root.ptype, root.prefix[cl:], nil)
 			child.routes = root.routes
 			child.children = root.children
 
 			root.kind = skind
 			root.prefix = root.prefix[:cl]
 			root.children = [akind + 1]nodes{}
-			root.routes = make(map[string]*Route)
+			// root.routes = make(map[string]*Route)
+			root.routes = root.routes[:0]
 			root.addChild(child)
 
 			if cl == sl {
@@ -139,7 +117,7 @@ func (s *node) insertStatic(path string, route *Route) *node {
 				return root
 			}
 			// /user和/usad
-			child = newTree(skind, "", "", prefix[cl:], route)
+			child = newNode(skind, "", prefix[cl:], route)
 			root.addChild(child)
 			return child
 		}
@@ -152,7 +130,7 @@ func (s *node) insertStatic(path string, route *Route) *node {
 				root = child
 				continue
 			}
-			child := newTree(skind, "", "", prefix, route)
+			child := newNode(skind, "", prefix, route)
 			root.addChild(child)
 			return child
 		} else {
@@ -167,7 +145,7 @@ func (s *node) insertStatic(path string, route *Route) *node {
 func (s *node) insertPath(pname string, route *Route) *node {
 	child := s.findChild(akind, "", '*')
 	if child == nil {
-		child = newTree(akind, pname, "", "*", route)
+		child = newNode(akind, "", "*", route)
 		s.addChild(child)
 	}
 	return child
@@ -180,7 +158,7 @@ func (s *node) insertParam(pname, ptype string, route *Route) *node {
 	}
 	child := s.findChild(kind, ptype, ':')
 	if child == nil {
-		child = newTree(kind, pname, ptype, ":", route)
+		child = newNode(kind, ptype, ":", route)
 		s.addChild(child)
 	}
 	return child
@@ -218,6 +196,8 @@ func (s *node) insert(route *Route) {
 			if len(params) > 1 {
 				ptype = params[1]
 			}
+			// route.pnames = append(route.pnames, pname)
+			route.pnames = append(route.pnames, routeParam{pname, start, e})
 			if e == l-1 {
 				root = root.insertParam(pname, ptype, route)
 			} else {
@@ -238,10 +218,13 @@ func (s *node) insert(route *Route) {
 			if start > lstart {
 				root = root.insertStatic(path[lstart:start], nil)
 			}
+			pname := path[start+1 : e]
+			// route.pnames = append(route.pnames, pname)
+			route.pnames = append(route.pnames, routeParam{pname, start, e})
 			if e >= l {
-				root = root.insertParam(path[start+1:e], "", route)
+				root = root.insertParam(pname, "", route)
 			} else {
-				root = root.insertParam(path[start+1:e], "", nil)
+				root = root.insertParam(pname, "", nil)
 			}
 			lstart, start = e, e
 		case '*':
@@ -259,6 +242,7 @@ func (s *node) insert(route *Route) {
 			if e > start+1 {
 				pname = path[start+1 : e]
 			}
+			route.pnames = append(route.pnames, routeParam{pname, start, e})
 			root = root.insertPath(pname, route)
 
 			lstart = len(path)
@@ -276,14 +260,19 @@ func (s *node) addRoute(route *Route) {
 	if route == nil {
 		return
 	}
-	if s.routes == nil {
-		s.routes = make(map[string]*Route)
-	}
-	if _, ok := s.routes[route.Method]; ok {
-		// panic("route has been exists")
+	if v := s.routes.find(route.Method); v != nil {
+
 	} else {
-		s.routes[route.Method] = route
+		s.routes = append(s.routes, route)
 	}
+	// if s.routes == nil {
+	//	s.routes = make(map[string]*Route)
+	// }
+	// if _, ok := s.routes[route.Method]; ok {
+	//	// panic("route has been exists")
+	// } else {
+	//	s.routes[route.Method] = route
+	// }
 }
 
 func (s *node) addChild(child *node) {
@@ -321,11 +310,24 @@ func (s *node) matchChild(path string, c *context) *node {
 		label := path[0]
 		switch uint8(kind) {
 		case skind:
-			child := cs.findChild(label)
-			if child == nil {
+			// 二分法查找前缀
+			num := len(cs)
+			idx := 0
+			i, j := 0, num-1
+			for i <= j {
+				idx = i + (j-i)/2
+				if label > cs[idx].prefix[0] {
+					i = idx + 1
+				} else if label < cs[idx].prefix[0] {
+					j = idx - 1
+				} else {
+					i = num
+				}
+			}
+			if cs[idx].prefix[0] != label {
 				continue
 			}
-			if t := child.match(path, c); t != nil {
+			if t := cs[idx].match(path, c); t != nil {
 				return t
 			}
 		default:
@@ -348,7 +350,6 @@ func (s *node) match(path string, c *context) *node {
 		return s.matchChild(path[len(s.prefix):], c)
 	case pkind:
 		i := 0
-		isLeaf := s.isLeaf()
 		switch s.ptype {
 		case "":
 			i = strings.IndexByte(path, '/')
@@ -356,38 +357,16 @@ func (s *node) match(path string, c *context) *node {
 				return nil
 			}
 			if i == -1 {
-				c.params[s.pname] = path
-				return s
-			}
-		case "str":
-			for i = 0; i < len(path); i++ {
-				if path[i] == '/' {
-					break
-				}
-				if isLeaf {
-					continue
-				}
-				if t := s.matchChild(path[i:], c); t != nil {
-					c.params[s.pname] = path[:i]
-					return t
-				}
-			}
-			if i == 0 {
-				return nil
-			}
-			if i == len(path) {
-				c.params[s.pname] = path[:i]
+				c.pvalues = append(c.pvalues, path)
 				return s
 			}
 		case "int":
-			i = strings.IndexFunc(path, func(r rune) bool {
-				return !unicode.IsDigit(r)
-			})
+			i = strings.IndexFunc(path, func(r rune) bool { return !unicode.IsDigit(r) })
 			if i == 0 {
 				return nil
 			}
 			if i == -1 {
-				c.params[s.pname] = path
+				c.pvalues = append(c.pvalues, path)
 				return s
 			}
 		case "float":
@@ -406,32 +385,47 @@ func (s *node) match(path string, c *context) *node {
 				return nil
 			}
 			if i == -1 {
-				c.params[s.pname] = path
+				c.pvalues = append(c.pvalues, path)
 				return s
 			}
-		case "path":
-			if isLeaf {
-				c.params[s.pname] = path
-				return s
+		case "str":
+			if path[0] == '/' {
+				return nil
 			}
 			for i = 1; i < len(path); i++ {
+				c.pvalues = append(c.pvalues, path[:i])
 				if t := s.matchChild(path[i:], c); t != nil {
-					c.params[s.pname] = path[:i]
 					return t
+				}
+				c.pvalues = c.pvalues[:len(c.pvalues)-1]
+				if path[i] == '/' {
+					break
 				}
 			}
 			if i == len(path) {
-				c.params[s.pname] = path
+				c.pvalues = append(c.pvalues, path[:i])
 				return s
 			}
-		}
-		if isLeaf || i == len(path) {
+			return nil
+		case "path":
+			for i = 1; i < len(path); i++ {
+				c.pvalues = append(c.pvalues, path[:i])
+				if t := s.matchChild(path[i:], c); t != nil {
+					return t
+				}
+				c.pvalues = c.pvalues[:len(c.pvalues)-1]
+			}
+			if i == len(path) {
+				c.pvalues = append(c.pvalues, path[:i])
+				return s
+			}
 			return nil
 		}
+		c.pvalues = append(c.pvalues, path[:i])
 		if t := s.matchChild(path[i:], c); t != nil {
-			c.params[s.pname] = path[:i]
 			return t
 		}
+		c.pvalues = c.pvalues[:len(c.pvalues)-1]
 		return nil
 	case rkind:
 		if s.regex == nil {
@@ -442,17 +436,18 @@ func (s *node) match(path string, c *context) *node {
 			e = len(path)
 		}
 		is := s.regex.FindStringIndex(path[:e])
-		if len(is) == 0 || is[0] > 0 || is[1] < e {
+		if len(is) == 0 {
 			return nil
 		}
 		i := is[1]
+		c.pvalues = append(c.pvalues, path[:i])
 		if t := s.matchChild(path[i:], c); t != nil {
-			c.params[s.pname] = path[:i]
 			return t
 		}
+		c.pvalues = c.pvalues[:len(c.pvalues)-1]
 		return nil
 	case akind:
-		c.params[s.pname] = path
+		c.pvalues = append(c.pvalues, path)
 		return s
 	}
 	return nil
@@ -463,7 +458,8 @@ func (s *node) search(method, path string, c *context) (*Route, bool) {
 	if root == nil || root.routes == nil {
 		return nil, false
 	}
-	return root.routes[method], len(root.routes) > 0
+	// return root.routes[method], len(root.routes) > 0
+	return root.routes.find(method), len(root.routes) > 0
 }
 
 func (s *node) Print(l int) {
@@ -485,15 +481,17 @@ func (s *node) Print(l int) {
 	}
 }
 
-func newTree(kind uint8, pname, ptype, prefix string, route *Route) *node {
+func newNode(kind uint8, ptype, prefix string, route *Route) *node {
 	t := &node{
 		kind:   kind,
-		pname:  pname,
 		ptype:  ptype,
 		prefix: prefix,
 	}
 	t.addRoute(route)
 	if kind == rkind && ptype != "" {
+		if ptype[0] != '^' {
+			ptype = "^" + ptype
+		}
 		t.regex = regexp.MustCompile(ptype)
 	}
 	return t

@@ -1,13 +1,13 @@
 package forest
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/honmaple/forest/render"
 )
 
 type H map[string]interface{}
@@ -16,10 +16,14 @@ type Context interface {
 	Request() *http.Request
 	Response() *Response
 
-	HTML(int, string) error
+	XML(int, interface{}) error
 	JSON(int, interface{}) error
+	JSONP(int, string, interface{}) error
+	HTML(int, string) error
 	String(int, string, ...interface{}) error
-	Render(int, string, interface{}) error
+	Blob(int, string, []byte) error
+	Render(int, render.Renderer) error
+	RenderHTML(int, string, interface{}) error
 	Redirect(int, string) error
 
 	Param(string) string
@@ -38,7 +42,7 @@ type context struct {
 	response *Response
 	request  *http.Request
 	engine   *Engine
-	params   map[string]string
+	pvalues  []string
 	store    sync.Map
 	query    url.Values
 	route    *Route
@@ -65,14 +69,21 @@ func (c *context) Get(key string) interface{} {
 }
 
 func (c *context) Param(key string) string {
-	value, _ := c.params[key]
-	return value
+	for i, p := range c.route.pnames {
+		if p.key == key {
+			return c.pvalues[i]
+		}
+	}
+	return ""
 }
 
 func (c *context) Params() map[string]string {
+	if len(c.route.pnames) == 0 {
+		return nil
+	}
 	params := make(map[string]string)
-	for k, v := range c.params {
-		params[k] = v
+	for i, p := range c.route.pnames {
+		params[p.key] = c.pvalues[i]
 	}
 	return params
 }
@@ -96,36 +107,44 @@ func (c *context) QueryParams() url.Values {
 	return c.query
 }
 
-func (c *context) SetHeader(key string, value string) {
-	c.response.Header().Set(key, value)
+func (c *context) Render(code int, r render.Renderer) error {
+	c.response.WriteHeader(code)
+	return r.Render(c.response)
 }
 
-func (c *context) String(code int, format string, values ...interface{}) error {
-	c.SetHeader("Content-Type", "text/plain")
+func (c *context) RenderHTML(code int, name string, data interface{}) error {
 	c.response.WriteHeader(code)
-	c.response.Write([]byte(fmt.Sprintf(format, values...)))
-	return nil
+	return c.route.Render(c.response, name, data)
+}
+
+func (c *context) Blob(code int, contentType string, data []byte) error {
+	c.response.WriteHeader(code)
+	return render.Blob(c.response, contentType, data)
+}
+
+func (c *context) XML(code int, data interface{}) error {
+	c.response.WriteHeader(code)
+	return render.XML(c.response, data)
 }
 
 func (c *context) JSON(code int, data interface{}) error {
-	c.SetHeader("Content-Type", "application/json")
 	c.response.WriteHeader(code)
-	encoder := json.NewEncoder(c.response)
-	if err := encoder.Encode(data); err != nil {
-		http.Error(c.response, err.Error(), 500)
-	}
-	return nil
+	return render.JSON(c.response, data)
 }
 
-func (c *context) HTML(code int, html string) error {
-	c.SetHeader("Content-Type", "text/html")
+func (c *context) JSONP(code int, callback string, data interface{}) error {
 	c.response.WriteHeader(code)
-	c.response.Write([]byte(html))
-	return nil
+	return render.JSONP(c.response, callback, data)
 }
 
-func (c *context) Render(code int, name string, data interface{}) error {
-	return c.route.Render(c.response, name, data)
+func (c *context) String(code int, format string, args ...interface{}) error {
+	c.response.WriteHeader(code)
+	return render.Text(c.response, sprintf(format, args...))
+}
+
+func (c *context) HTML(code int, data string) error {
+	c.response.WriteHeader(code)
+	return render.HTML(c.response, data)
 }
 
 func (c *context) Redirect(code int, url string) error {
@@ -167,22 +186,18 @@ func (c *context) Logger() Logger {
 func (c *context) reset(r *http.Request, w http.ResponseWriter) {
 	c.request = r
 	c.response.reset(w)
-	c.params = make(map[string]string)
+	c.pvalues = c.pvalues[:0]
 	c.index = -1
 }
 
-func (c *context) Next() error {
+func (c *context) Next() (err error) {
 	c.index++
-	if c.index < len(c.route.Middlewares) {
-		c.route.Middlewares[c.index](c)
-		c.index++
+	if c.index < len(c.route.Handlers) {
+		err = c.route.Handlers[c.index](c)
 	}
-	if c.index == len(c.route.Middlewares) {
-		if err := c.route.Handler(c); err != nil {
-			c.route.ErrorHandler(err, c)
-			return err
-		}
+	if err != nil {
+		c.route.ErrorHandler(err, c)
 		return nil
 	}
-	return nil
+	return
 }
