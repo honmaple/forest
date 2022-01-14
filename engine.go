@@ -70,7 +70,7 @@ func sprintf(format string, args ...interface{}) string {
 	if len(args) == 0 {
 		return format
 	}
-	return fmt.Sprintf(format, args)
+	return fmt.Sprintf(format, args...)
 }
 
 func debugPrint(msg string, args ...interface{}) {
@@ -91,11 +91,16 @@ func New() *Engine {
 		middlewares: make([]HandlerFunc, 0),
 	}
 	e.Debug = true
-	e.Server = &http.Server{Handler: e}
 	e.Logger = newLogger()
 	e.ErrorHandler = ErrorHandler
 	e.NotFound(NotFoundHandler)
 	e.MethodNotAllowed(MethodNotAllowedHandler)
+	return e
+}
+
+func NewHost(host string) *Engine {
+	e := New()
+	e.host = host
 	return e
 }
 
@@ -121,10 +126,32 @@ func (e *Engine) URL(name string, args ...interface{}) string {
 	return ""
 }
 
-func (e *Engine) Use(middlewares ...HandlerFunc) {
+func (e *Engine) Use(middlewares ...HandlerFunc) *Engine {
 	e.rootGroup.Use(middlewares...)
 	e.notFoundRoute.Handlers = append(e.middlewares, e.notFoundRoute.Last())
 	e.methodNotAllowedRoute.Handlers = append(e.middlewares, e.methodNotAllowedRoute.Last())
+	return e
+}
+
+func (e *Engine) Mount(prefix string, child *Engine) {
+	for _, r := range child.Routes() {
+		r.Path = prefix + r.Path
+		r.Handlers = append(e.middlewares, r.Handlers...)
+		e.addRoute(r)
+	}
+	if child.Logger == nil {
+		child.Logger = e.Logger
+	}
+	if child.Renderer == nil {
+		child.Renderer = e.Renderer
+	}
+	if child.ErrorHandler == nil {
+		child.ErrorHandler = e.ErrorHandler
+	}
+}
+
+func (e *Engine) MountGroup(prefix string, child *Group) {
+	e.rootGroup.Mount(prefix, child)
 }
 
 func (e *Engine) NotFound(h HandlerFunc) {
@@ -168,6 +195,9 @@ func (e *Engine) configure(addr string) error {
 			debugPrint(r.String())
 		}
 		debugPrint("Listening and serving HTTP on %s\n", addr)
+	}
+	if e.Server == nil {
+		e.Server = &http.Server{Handler: e}
 	}
 	e.Server.Addr = addr
 	return nil

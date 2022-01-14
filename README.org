@@ -1,57 +1,180 @@
-** Route
-   #+begin_example
-   /path/:var
-   /path/pre:var
-   /path/:var1/:var2
-   /path/*var
-   /path/pre*var
-   /path/{var}
-   /path/{var:str}
-   /path/{var:int}
-   /path/{var:float}
-   /path/{var:[0-9]+}
-   /path/{var:path}
-   /path/{var1}-{var2}
-   /path/{var1}-{var2}/{var3}
-   #+end_example
-
 ** Example
-#+begin_src go
-  package main
+   #+begin_src go
+     package main
 
-  import (
-      "net/http"
+     import (
+         "net/http"
 
-      "github.com/honmaple/forest"
-      "github.com/honmaple/forest/middleware"
-  )
+         "github.com/honmaple/forest"
+         "github.com/honmaple/forest/middleware"
+     )
 
-  func main() {
-      r := forest.New()
-      r.Use(middleware.Recover())
-      r.Use(middleware.Logger())
-      r.GET("/", func(c forest.Context) error {
-          return c.HTML(http.StatusOK, "<h1>Hello Forest</h1>")
+     func main() {
+         r := forest.New()
+         r.Use(middleware.Recover())
+         r.Use(middleware.Logger())
+         r.GET("/", func(c forest.Context) error {
+             return c.HTML(http.StatusOK, "<h1>Hello Forest</h1>")
+         })
+
+         v1 := r.Group("/v1")
+         {
+             v1.GET("/posts/{title}", func(c forest.Context) error {
+                 return c.JSON(http.StatusOK, forest.H{"title": c.Param("title")})
+             })
+             v1.POST("/posts", func(c forest.Context) error {
+                 return c.JSON(http.StatusOK, forest.H{"title": c.Param("title")})
+             })
+         }
+
+         v2 := forest.NewHost("v2.localhost:8000")
+         {
+             v2.GET("/posts/{title}", func(c forest.Context) error {
+                 return c.JSON(http.StatusOK, forest.H{"title": c.Param("title")})
+             })
+         }
+
+         r.Mount("", v2)
+         r.Start("127.0.0.1:8000")
+     }
+   #+end_src
+
+** Route
+
+*** Single parameter in path
+    #+begin_src go
+      router := forest.New()
+      // /posts/1                    {"var": "1"}
+      // /posts/test                 {"var": "test"}
+      // /posts, /posts/, /posts/1/1 not match
+      router.GET("/posts/:var", handler)
+      // /posts/1                    {"var": "1"}
+      // /posts/1/                   {"var": "1/"}
+      // /posts/1/test/2             {"var": "1/test/2"}
+      router.GET("/posts/*var", handler)
+      // /posts/1                    {"var": "1"}
+      // /posts/test                 {"var": "test"}
+      // /posts, /posts/, /posts/1/1 not match
+      router.GET("/posts/{var}", handler)
+      router.GET("/posts/{var:str}", handler)
+      // /posts/1                    {"var": "1"}
+      // /posts/test                 not match
+      router.GET("/posts/{var:int}", handler)
+      // /posts/1                    not match
+      // /posts/test                 not match
+      // /posts/.1                   {"var": ".1"}
+      // /posts/1.1                  {"var": "1.1"}
+      // /posts/1.10                 {"var": "1.10"}
+      router.GET("/posts/{var:float}", handler)
+      // /posts/1                    {"var": "1"}
+      // /posts/test                 {"var": "test"}
+      // /posts/test/1               {"var": "test/1"}
+      router.GET("/posts/{var:path}", handler)
+    #+end_src
+*** Multi parameters in path
+    #+begin_src go
+      // /posts/1                    not match
+      // /posts/prefixtest           {"var": "test"}
+      router.GET("/posts/prefix:var", handler)
+      // /posts/prefixtest           {"var:end": "test"}
+      router.GET("/posts/prefix:var:end", handler)
+      // /posts/test                 {"var": "test"}
+      // /posts/test/1               {"var": "test/1"}
+      router.GET("/posts/*var/test", handler)
+      // /posts/test                 not match
+      // /posts/test-123             {"var": "test", "var1": "123"}
+      router.GET("/posts/{var}-{var1:int}", handler)
+      // /posts/123-test             {"var": "123", "var1": "test"}
+      router.GET("/posts/{var:int}-{var1}", handler)
+      // /posts/123-test             {"var": "123", "var1": "test"}
+      // /posts/123/test-test        {"var": "123/test", "var1": "test"}
+      router.GET("/posts/{var:path}-{var1}", handler)
+      // /posts/1/1/test             {"var": "1", "var1": "1", "var2": "test"}
+      // /posts/test/1/1/test        {"var": "test/1", "var1": "1", "var2": "test"}
+      // /posts/test/1/1/s/test      not match
+      router.GET("/posts/{var:path}/{var1:int}/{var2}", handler)
+      // /posts/1/1/test             {"var": "1", "var1": "1", "var2": "test"}
+      // /posts/test/1/1/test        {"var": "test", "var1": "1", "var2": "1/test"}
+      // /posts/test/1/1/s/test      {"var": "test", "var1": "1", "var2": "1/s/test"}
+      router.GET("/posts/{var:path}/{var1:int}/{var2:path}", handler)
+    #+end_src
+
+** Custom
+*** Custom Middleware
+    #+begin_src go
+      func mymiddleware(c forest.Context) error {
+          // do something
+          // c.Next() is required, or else your handler will not execute
+          return c.Next()
+      }
+      router := forest.New()
+      // with root
+      router.Use(mymiddleware)
+      // with group
+      group := router.Group("/api/v1", mymiddleware)
+      // with special handler
+      group.GET("/", func(c forest.Context) error {
+          return nil
+      }, mymiddleware)
+    #+end_src
+
+*** Custom Logger
+    #+begin_src go
+      router := forest.New()
+      router.Logger = Logger1
+
+      router.GET("/posts", func(c forest.Context) error {
+          // c.Logger() == Logger1
+          ...
+          })
+
+      group := router.Group("/api/v1")
+      group.GET("/posts", func(c forest.Context) error {
+          // c.Logger() == Logger1
+          ...
+          })
+
+      group := router.Group("/api/v2")
+      group.Logger = Logger2
+      group.GET("/posts", func(c forest.Context) error {
+          // c.Logger() == Logger2
+          ...
+          })
+    #+end_src
+
+*** Custom Error Handler
+    #+begin_src go
+      router := forest.New()
+      // engine only
+      router.NotFound(func(c forest.Context) error {
+          return c.JSON(404, forest.H{"message": "not found"})
+      })
+      router.MethodNotAllowed(func(c forest.Context) error {
+          return c.JSON(405, forest.H{"message": "method not allowed"})
       })
 
-      v1 := r.Group("/v1")
-      {
-          v1.GET("/posts/{title}", func(c forest.Context) error {
-              return c.JSON(http.StatusOK, forest.H{"title": c.Param("title")})
-          })
-          v1.POST("/posts", func(c forest.Context) error {
-              return c.JSON(http.StatusOK, forest.H{"title": c.Param("title")})
-          })
+      router.ErrorHandler = func(err error, c Context) {
+          c.String(500, err.Error())
+      }
+      group := router.Group("/api/v1")
+      // group only
+      group.ErrorHandler = func(err error, c Context) {
+          c.String(501, err.Error())
+      }
+    #+end_src
+
+*** Custom Context
+    #+begin_src go
+      type MyContext struct {
+          forest.Context
       }
 
-      v2 := forest.NewHost("v2.localhost:8000")
-      {
-          v2.GET("/posts/{title}", func(c forest.Context) error {
-              return c.JSON(http.StatusOK, forest.H{"title": c.Param("title")})
-          })
+      func (c *MyContext) Next() error {
+          return c.NextWith(c)
       }
 
-      r.Mount("", v2)
-      r.Start("127.0.0.1:8000")
-  }
-#+end_src
+      func MyContextMiddleware(c forest.Context) error {
+          // doing somthing
+          return c.NextWith(&MyContext{c})
+      }
+    #+end_src

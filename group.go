@@ -3,6 +3,7 @@ package forest
 import (
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -37,12 +38,6 @@ var methods = [...]string{
 	http.MethodTrace,
 }
 
-func NewContext(r *http.Request, w http.ResponseWriter) Context {
-	c := &context{response: NewResponse(w)}
-	c.reset(r, w)
-	return c
-}
-
 func (g *Group) Host(host string, prefix string, middlewares ...HandlerFunc) *Group {
 	n := &Group{
 		host:         host,
@@ -65,11 +60,15 @@ func (g *Group) Group(prefix string, middlewares ...HandlerFunc) *Group {
 	return g.Host("", prefix, middlewares...)
 }
 
-func (g *Group) Use(middlewares ...HandlerFunc) {
+func (g *Group) Use(middlewares ...HandlerFunc) *Group {
 	g.middlewares = append(g.middlewares, middlewares...)
+	return g
 }
 
 func (g *Group) Add(method string, path string, handler HandlerFunc, middlewares ...HandlerFunc) *Route {
+	if matches, err := regexp.MatchString("^[A-Z]+$", method); !matches || err != nil {
+		panic("http method " + method + " is not valid")
+	}
 	route := &Route{
 		Host:   g.host,
 		Path:   g.prefix + path,
@@ -81,6 +80,14 @@ func (g *Group) Add(method string, path string, handler HandlerFunc, middlewares
 
 	g.engine.addRoute(route)
 	return route
+}
+
+func (g *Group) TRACE(path string, handler HandlerFunc, middlewares ...HandlerFunc) *Route {
+	return g.Add(http.MethodTrace, path, handler, middlewares...)
+}
+
+func (g *Group) CONNECT(path string, handler HandlerFunc, middlewares ...HandlerFunc) *Route {
+	return g.Add(http.MethodConnect, path, handler, middlewares...)
 }
 
 func (g *Group) OPTIONS(path string, handler HandlerFunc, middlewares ...HandlerFunc) *Route {
@@ -173,49 +180,23 @@ func (g *Group) StaticFS(path string, fs http.FileSystem, middlewares ...Handler
 		return nil
 	}
 	path = filepath.Join(path, "/*")
-	g.Add(http.MethodHead, path, handler, middlewares...)
 	return g.GET(path, handler, middlewares...)
 }
 
-func (g *Group) Mount(prefix string, group *Group) {
-	if g.engine == group.engine {
+func (g *Group) Mount(prefix string, child *Group) {
+	if g.engine == child.engine {
 		return
 	}
-	for _, r := range group.engine.Routes() {
-		r.Path = prefix + r.Path
-		r.Handlers = append(g.middlewares, r.Handlers...)
-		g.engine.addRoute(r)
-	}
-	group.parent = g
-	group.prefix = prefix + g.prefix
-	group.engine = g.engine
-	if group.Logger == nil {
-		group.Logger = g.Logger
-	}
-	if group.Renderer == nil {
-		group.Renderer = g.Renderer
-	}
-	if group.ErrorHandler == nil {
-		group.ErrorHandler = g.ErrorHandler
-
-	}
-}
-
-func NewHost(host string) *Group {
-	g := &Group{
-		host:        host,
-		engine:      New(),
-		middlewares: make([]HandlerFunc, 0),
-	}
-	g.engine.Debug = false
-	return g
+	child.parent = g
+	child.prefix = g.prefix + prefix + child.prefix
+	child.engine = g.engine
+	child.middlewares = mergeHandlers(g.middlewares, child.middlewares)
+	g.children = append(g.children, child)
+	g.engine.Mount(prefix, child.engine)
 }
 
 func NewGroup() *Group {
-	g := &Group{
-		engine:      New(),
-		middlewares: make([]HandlerFunc, 0),
-	}
-	g.engine.Debug = false
-	return g
+	e := New()
+	e.Debug = false
+	return e.rootGroup
 }

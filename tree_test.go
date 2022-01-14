@@ -35,7 +35,7 @@ func TestTree(t *testing.T) {
 	for _, url := range urls {
 		root.insert(&Route{Method: http.MethodGet, Path: url})
 	}
-	root.Print(0)
+	// root.Print(0)
 
 	assert := testify.New(t)
 	paths := []testPath{

@@ -15,10 +15,11 @@ type H map[string]interface{}
 
 type Context interface {
 	Logger() Logger
-	Next() error
-	NextWith(Context) error
 	Request() *http.Request
 	Response() *Response
+
+	Next() error
+	NextWith(Context) error
 
 	Get(string) interface{}
 	Set(string, interface{})
@@ -26,22 +27,23 @@ type Context interface {
 	Param(string) string
 	Params() map[string]string
 
+	Bind(interface{}) error
+	BindWith(interface{}, binder.Binder) error
+	BindParams(interface{}) error
+	BindHeader(interface{}) error
+
 	XML(int, interface{}) error
 	JSON(int, interface{}) error
 	JSONP(int, string, interface{}) error
 	HTML(int, string) error
 	String(int, string, ...interface{}) error
 	Blob(int, string, []byte) error
-	Render(int, render.Renderer) error
-	RenderHTML(int, string, interface{}) error
+	Render(int, string, interface{}) error
+	RenderWith(int, render.Renderer) error
 	File(string) error
 
+	Status(int) error
 	Redirect(int, string) error
-
-	Bind(interface{}) error
-	BindWith(interface{}, binder.Binder) error
-	BindQuery(interface{}) error
-	BindHeader(interface{}) error
 }
 
 type context struct {
@@ -86,7 +88,7 @@ func (c *context) Params() map[string]string {
 	if len(c.route.pnames) == 0 {
 		return nil
 	}
-	params := make(map[string]string)
+	params := make(Params)
 	for i, p := range c.route.pnames {
 		if i < len(c.pvalues) {
 			params[p.key] = c.pvalues[i]
@@ -122,27 +124,22 @@ func (c *context) BindWith(data interface{}, b binder.Binder) error {
 	return b.Bind(c.request, data)
 }
 
-func (c *context) BindQuery(data interface{}) error {
-	return c.BindWith(data, binder.Query)
+func (c *context) BindParams(data interface{}) error {
+	return binder.Params.Bind(c.Params(), data)
 }
 
 func (c *context) BindHeader(data interface{}) error {
 	return c.BindWith(data, binder.Header)
 }
 
-func (c *context) Render(code int, r render.Renderer) error {
+func (c *context) Render(code int, name string, data interface{}) error {
 	c.response.WriteHeader(code)
-	return r.Render(c.response)
+	return c.route.Render(c.response, name, data)
 }
 
 func (c *context) RenderWith(code int, r render.Renderer) error {
 	c.response.WriteHeader(code)
 	return r.Render(c.response)
-}
-
-func (c *context) RenderHTML(code int, name string, data interface{}) error {
-	c.response.WriteHeader(code)
-	return c.route.Render(c.response, name, data)
 }
 
 func (c *context) Blob(code int, contentType string, data []byte) error {
@@ -167,6 +164,11 @@ func (c *context) String(code int, format string, args ...interface{}) error {
 
 func (c *context) HTML(code int, data string) error {
 	return render.HTML(c.response, code, data)
+}
+
+func (c *context) Status(code int) error {
+	c.response.WriteHeader(code)
+	return nil
 }
 
 func (c *context) Redirect(code int, url string) error {
@@ -237,4 +239,10 @@ func (c *context) reset(r *http.Request, w http.ResponseWriter) {
 	c.response.reset(w)
 	c.pvalues = c.pvalues[:0]
 	c.index = -1
+}
+
+func NewContext(r *http.Request, w http.ResponseWriter) Context {
+	c := &context{response: NewResponse(w)}
+	c.reset(r, w)
+	return c
 }

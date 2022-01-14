@@ -168,6 +168,13 @@ func (s *node) insert(route *Route) {
 	root := s
 	path := route.Path
 
+	if path == "" {
+		path = "/"
+	}
+	if !strings.HasPrefix(path, "/") {
+		panic("forest: route path must startswith '/'")
+	}
+
 	l := len(path)
 	lstart, start := 0, 0
 	for start < l {
@@ -287,15 +294,6 @@ func (s *node) findChild(kind uint8, ptype string, l byte) *node {
 		}
 	}
 	return nil
-}
-
-func (s *node) isLeaf() bool {
-	for i := range s.children {
-		if len(s.children[i]) > 0 {
-			return false
-		}
-	}
-	return true
 }
 
 func (s *node) matchChild(path string, c *context) *node {

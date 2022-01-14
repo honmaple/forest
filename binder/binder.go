@@ -21,6 +21,7 @@ var (
 	Query         = QueryBinder{"query"}
 	Header        = HeaderBinder{"header"}
 	MultipartForm = MultipartFormBinder{"form"}
+	Params        = ParamsBinder{"param"}
 )
 
 type JSONBinder struct{}
@@ -71,6 +72,18 @@ type HeaderBinder struct {
 
 func (b HeaderBinder) Bind(req *http.Request, dst interface{}) error {
 	return bindData(dst, req.Header, b.TagName)
+}
+
+type ParamsBinder struct {
+	TagName string
+}
+
+func (b ParamsBinder) Bind(params map[string]string, dst interface{}) error {
+	m := make(map[string][]string)
+	for k, v := range params {
+		m[k] = []string{v}
+	}
+	return bindData(dst, m, b.TagName)
 }
 
 func Bind(req *http.Request, dst interface{}) (err error) {
