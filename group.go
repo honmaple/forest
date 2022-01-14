@@ -2,6 +2,8 @@ package forest
 
 import (
 	"net/http"
+	"path/filepath"
+	"strings"
 )
 
 type (
@@ -35,8 +37,8 @@ var methods = [...]string{
 	http.MethodTrace,
 }
 
-func NewContext(e *Engine, r *http.Request, w http.ResponseWriter) Context {
-	c := &context{engine: e, response: NewResponse(w)}
+func NewContext(r *http.Request, w http.ResponseWriter) Context {
+	c := &context{response: NewResponse(w)}
 	c.reset(r, w)
 	return c
 }
@@ -109,12 +111,70 @@ func (g *Group) DELETE(path string, handler HandlerFunc, middlewares ...HandlerF
 	return g.Add(http.MethodDelete, path, handler, middlewares...)
 }
 
-func (g *Group) Any(path string, handler HandlerFunc, middlewares ...HandlerFunc) []*Route {
-	routes := make([]*Route, len(methods))
+func (g *Group) Any(path string, handler HandlerFunc, middlewares ...HandlerFunc) Routes {
+	routes := make(Routes, len(methods))
 	for i, m := range methods {
 		routes[i] = g.Add(m, path, handler, middlewares...)
 	}
 	return routes
+}
+
+func (g *Group) StaticFile(path, file string, middlewares ...HandlerFunc) *Route {
+	if strings.Contains(path, ":") || strings.Contains(path, "*") || strings.Contains(path, "{") {
+		panic("URL parameters can not be used when serving a static file")
+	}
+	handler := func(c Context) error {
+		return c.File(file)
+	}
+	return g.GET(path, handler, middlewares...)
+}
+
+func (g *Group) Static(path, root string, middlewares ...HandlerFunc) *Route {
+	return g.StaticFS(path, http.Dir(root), middlewares...)
+}
+
+func (g *Group) StaticFS(path string, fs http.FileSystem, middlewares ...HandlerFunc) *Route {
+	if strings.Contains(path, ":") || strings.Contains(path, "*") || strings.Contains(path, "{") {
+		panic("URL parameters can not be used when serving a static file")
+	}
+	const indexPage = "/index.html"
+	handler := func(c Context) error {
+		fpath := c.Param("*")
+		fname := filepath.Clean("/" + fpath)
+
+		file, err := fs.Open(fname)
+		if err != nil {
+			return NotFoundHandler(c)
+		}
+		defer file.Close()
+
+		fi, err := file.Stat()
+		if err != nil {
+			return NotFoundHandler(c)
+		}
+		url := c.Request().URL.Path
+		if fi.IsDir() {
+			if url == "" || url[len(url)-1] != '/' {
+				return c.Redirect(http.StatusMovedPermanently, url+"/")
+			}
+			index, err := fs.Open(strings.TrimSuffix(fname, "/") + indexPage)
+			if err != nil {
+				return NotFoundHandler(c)
+			}
+			defer index.Close()
+
+			indexfi, err := file.Stat()
+			if err != nil {
+				return NotFoundHandler(c)
+			}
+			file, fi = index, indexfi
+		}
+		http.ServeContent(c.Response(), c.Request(), fi.Name(), fi.ModTime(), file)
+		return nil
+	}
+	path = filepath.Join(path, "/*")
+	g.Add(http.MethodHead, path, handler, middlewares...)
+	return g.GET(path, handler, middlewares...)
 }
 
 func (g *Group) Mount(prefix string, group *Group) {

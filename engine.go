@@ -1,6 +1,7 @@
 package forest
 
 import (
+	stdcontext "context"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,15 +14,13 @@ type (
 	rootGroup = Group
 	Engine    struct {
 		*rootGroup
+		mu                    sync.Mutex
 		pool                  sync.Pool
 		router                *Router
 		notFoundRoute         *Route
 		methodNotAllowedRoute *Route
 		Debug                 bool
-	}
-	Error struct {
-		Code    int         `json:"-"`
-		Message interface{} `json:"message"`
+		Server                *http.Server
 	}
 	HandlerFunc      func(Context) error
 	ErrorHandlerFunc func(error, Context)
@@ -52,8 +51,39 @@ var (
 	}
 )
 
+func handlerName(h HandlerFunc) string {
+	t := reflect.ValueOf(h).Type()
+	if t.Kind() == reflect.Func {
+		return runtime.FuncForPC(reflect.ValueOf(h).Pointer()).Name()
+	}
+	return t.String()
+}
+
+func mergeHandlers(m1 []HandlerFunc, m2 []HandlerFunc) []HandlerFunc {
+	m := make([]HandlerFunc, 0, len(m1)+len(m2))
+	m = append(m, m1...)
+	m = append(m, m2...)
+	return m
+}
+
+func sprintf(format string, args ...interface{}) string {
+	if len(args) == 0 {
+		return format
+	}
+	return fmt.Sprintf(format, args)
+}
+
+func debugPrint(msg string, args ...interface{}) {
+	fmt.Fprint(os.Stdout, sprintf(msg, args...))
+}
+
 func New() *Engine {
 	e := &Engine{
+		pool: sync.Pool{
+			New: func() interface{} {
+				return NewContext(nil, nil)
+			},
+		},
 		router: newRouter(),
 	}
 	e.rootGroup = &Group{
@@ -61,21 +91,15 @@ func New() *Engine {
 		middlewares: make([]HandlerFunc, 0),
 	}
 	e.Debug = true
+	e.Server = &http.Server{Handler: e}
 	e.Logger = newLogger()
 	e.ErrorHandler = ErrorHandler
-	e.pool.New = func() interface{} {
-		return NewContext(e, nil, nil)
-	}
 	e.NotFound(NotFoundHandler)
 	e.MethodNotAllowed(MethodNotAllowedHandler)
 	return e
 }
 
 func (e *Engine) addRoute(route *Route) {
-	if e.Debug {
-		debugPrint(route.String())
-	}
-
 	e.router.Insert(route)
 	return
 }
@@ -99,8 +123,8 @@ func (e *Engine) URL(name string, args ...interface{}) string {
 
 func (e *Engine) Use(middlewares ...HandlerFunc) {
 	e.rootGroup.Use(middlewares...)
-	e.notFoundRoute.Handlers = append(e.middlewares, e.notFoundRoute.Handlers[len(e.notFoundRoute.Handlers)-1])
-	e.methodNotAllowedRoute.Handlers = append(e.middlewares, e.methodNotAllowedRoute.Handlers[len(e.methodNotAllowedRoute.Handlers)-1])
+	e.notFoundRoute.Handlers = append(e.middlewares, e.notFoundRoute.Last())
+	e.methodNotAllowedRoute.Handlers = append(e.middlewares, e.methodNotAllowedRoute.Last())
 }
 
 func (e *Engine) NotFound(h HandlerFunc) {
@@ -138,49 +162,31 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c.Next()
 }
 
-func (e *Engine) Run(addr string) error {
-	server := http.Server{Addr: addr, Handler: e}
-	return server.ListenAndServe()
-}
-
-func (e *Error) Error() string {
-	return fmt.Sprintf("code=%d, message=%v", e.Code, e.Message)
-}
-
-func NewError(code int, message ...interface{}) *Error {
-	e := &Error{
-		Code: code,
+func (e *Engine) configure(addr string) error {
+	if e.Debug {
+		for _, r := range e.router.routes {
+			debugPrint(r.String())
+		}
+		debugPrint("Listening and serving HTTP on %s\n", addr)
 	}
-	if len(message) > 0 {
-		e.Message = message[0]
-	} else {
-		e.Message = http.StatusText(code)
-	}
-	return e
+	e.Server.Addr = addr
+	return nil
 }
 
-func handlerName(h HandlerFunc) string {
-	t := reflect.ValueOf(h).Type()
-	if t.Kind() == reflect.Func {
-		return runtime.FuncForPC(reflect.ValueOf(h).Pointer()).Name()
-	}
-	return t.String()
+func (e *Engine) Start(addr string) error {
+	e.mu.Lock()
+	e.configure(addr)
+	e.mu.Unlock()
+	return e.Server.ListenAndServe()
 }
 
-func mergeHandlers(m1 []HandlerFunc, m2 []HandlerFunc) []HandlerFunc {
-	m := make([]HandlerFunc, 0, len(m1)+len(m2))
-	m = append(m, m1...)
-	m = append(m, m2...)
-	return m
+func (e *Engine) StartTLS(addr string, certFile, keyFile string) error {
+	e.mu.Lock()
+	e.configure(addr)
+	e.mu.Unlock()
+	return e.Server.ListenAndServeTLS(certFile, keyFile)
 }
 
-func debugPrint(msg string) {
-	fmt.Fprint(os.Stdout, msg)
-}
-
-func sprintf(format string, args ...interface{}) string {
-	if len(args) == 0 {
-		return format
-	}
-	return fmt.Sprintf(format, args)
+func (e *Engine) Shutdown(ctx stdcontext.Context) error {
+	return e.Server.Shutdown(ctx)
 }

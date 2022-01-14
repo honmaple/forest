@@ -23,8 +23,18 @@ type Renderer interface {
 	Render(http.ResponseWriter) error
 }
 
-func Blob(w http.ResponseWriter, contentType string, data []byte) (err error) {
+func writeContentType(w http.ResponseWriter, v string) {
+	header := w.Header()
+	if header.Get("Content-Type") == "" {
+		header.Set("Content-Type", v)
+	}
+}
+
+func Blob(w http.ResponseWriter, code int, contentType string, data []byte) (err error) {
 	writeContentType(w, contentType)
+	if code > 0 {
+		w.WriteHeader(code)
+	}
 
 	if len(data) > 0 {
 		_, err = w.Write(data)
@@ -32,21 +42,28 @@ func Blob(w http.ResponseWriter, contentType string, data []byte) (err error) {
 	return
 }
 
-func Text(w http.ResponseWriter, data string) error {
-	return Blob(w, MIMETextPlainCharsetUTF8, []byte(data))
+func Text(w http.ResponseWriter, code int, data string) error {
+	return Blob(w, code, MIMETextPlainCharsetUTF8, []byte(data))
 }
 
-func HTML(w http.ResponseWriter, data string) error {
-	return Blob(w, MIMETextHTMLCharsetUTF8, []byte(data))
+func HTML(w http.ResponseWriter, code int, data string) error {
+	return Blob(w, code, MIMETextHTMLCharsetUTF8, []byte(data))
 }
 
-func JSON(w http.ResponseWriter, data interface{}) error {
+func JSON(w http.ResponseWriter, code int, data interface{}) error {
 	writeContentType(w, MIMEApplicationJSONCharsetUTF8)
+	if code > 0 {
+		w.WriteHeader(code)
+	}
 	return json.NewEncoder(w).Encode(data)
 }
 
-func JSONP(w http.ResponseWriter, callback string, data interface{}) (err error) {
+func JSONP(w http.ResponseWriter, code int, callback string, data interface{}) (err error) {
 	writeContentType(w, MIMEApplicationJavaScriptCharsetUTF8)
+	if code > 0 {
+		w.WriteHeader(code)
+	}
+
 	if _, err = w.Write([]byte(callback + "(")); err != nil {
 		return err
 	}
@@ -57,14 +74,10 @@ func JSONP(w http.ResponseWriter, callback string, data interface{}) (err error)
 	return err
 }
 
-func XML(w http.ResponseWriter, data interface{}) error {
+func XML(w http.ResponseWriter, code int, data interface{}) error {
 	writeContentType(w, MIMEApplicationJSONCharsetUTF8)
-	return json.NewEncoder(w).Encode(data)
-}
-
-func writeContentType(w http.ResponseWriter, v string) {
-	header := w.Header()
-	if header.Get("Content-Type") == "" {
-		header.Set("Content-Type", v)
+	if code > 0 {
+		w.WriteHeader(code)
 	}
+	return json.NewEncoder(w).Encode(data)
 }

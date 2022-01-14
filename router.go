@@ -97,10 +97,14 @@ func (r *Route) NotFoundHandler(c Context) error {
 }
 
 func (r *Route) Handle(c Context) error {
+	return r.Last()(c)
+}
+
+func (r *Route) Last() HandlerFunc {
 	if len(r.Handlers) == 0 {
 		return nil
 	}
-	return r.Handlers[len(r.Handlers)-1](c)
+	return r.Handlers[len(r.Handlers)-1]
 }
 
 func (r *Route) URL(args ...interface{}) string {

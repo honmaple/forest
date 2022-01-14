@@ -1,16 +1,39 @@
 package forest
 
 import (
+	"fmt"
 	"net/http"
 )
 
-type Response struct {
-	http.ResponseWriter
-	Size   int
-	Status int
-}
+type (
+	Error struct {
+		Code    int         `json:"-"`
+		Message interface{} `json:"message"`
+	}
+	Response struct {
+		http.ResponseWriter
+		Size   int
+		Status int
+	}
+)
 
 const noWritten = -1
+
+func (e *Error) Error() string {
+	return fmt.Sprintf("code=%d, message=%v", e.Code, e.Message)
+}
+
+func NewError(code int, message ...interface{}) *Error {
+	e := &Error{
+		Code: code,
+	}
+	if len(message) > 0 {
+		e.Message = message[0]
+	} else {
+		e.Message = http.StatusText(code)
+	}
+	return e
+}
 
 func (r *Response) Written() bool {
 	return r.Size != noWritten

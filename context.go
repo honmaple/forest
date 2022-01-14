@@ -3,18 +3,28 @@ package forest
 import (
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"sync"
 
+	"github.com/honmaple/forest/binder"
 	"github.com/honmaple/forest/render"
+	"os"
+	"path/filepath"
 )
 
 type H map[string]interface{}
 
 type Context interface {
+	Logger() Logger
+	Next() error
+	NextWith(Context) error
 	Request() *http.Request
 	Response() *Response
+
+	Get(string) interface{}
+	Set(string, interface{})
+
+	Param(string) string
+	Params() map[string]string
 
 	XML(int, interface{}) error
 	JSON(int, interface{}) error
@@ -24,24 +34,19 @@ type Context interface {
 	Blob(int, string, []byte) error
 	Render(int, render.Renderer) error
 	RenderHTML(int, string, interface{}) error
+	File(string) error
+
 	Redirect(int, string) error
 
-	Param(string) string
-	Params() map[string]string
-	File(string) error
-	Logger() Logger
-	Next() error
-
-	Get(string) interface{}
-	Set(string, interface{})
-
-	// Bind(interface{})
+	Bind(interface{}) error
+	BindWith(interface{}, binder.Binder) error
+	BindQuery(interface{}) error
+	BindHeader(interface{}) error
 }
 
 type context struct {
 	response *Response
 	request  *http.Request
-	engine   *Engine
 	pvalues  []string
 	store    sync.Map
 	query    url.Values
@@ -70,7 +75,7 @@ func (c *context) Get(key string) interface{} {
 
 func (c *context) Param(key string) string {
 	for i, p := range c.route.pnames {
-		if p.key == key {
+		if i < len(c.pvalues) && p.key == key {
 			return c.pvalues[i]
 		}
 	}
@@ -83,7 +88,9 @@ func (c *context) Params() map[string]string {
 	}
 	params := make(map[string]string)
 	for i, p := range c.route.pnames {
-		params[p.key] = c.pvalues[i]
+		if i < len(c.pvalues) {
+			params[p.key] = c.pvalues[i]
+		}
 	}
 	return params
 }
@@ -107,7 +114,28 @@ func (c *context) QueryParams() url.Values {
 	return c.query
 }
 
+func (c *context) Bind(data interface{}) error {
+	return binder.Bind(c.request, data)
+}
+
+func (c *context) BindWith(data interface{}, b binder.Binder) error {
+	return b.Bind(c.request, data)
+}
+
+func (c *context) BindQuery(data interface{}) error {
+	return c.BindWith(data, binder.Query)
+}
+
+func (c *context) BindHeader(data interface{}) error {
+	return c.BindWith(data, binder.Header)
+}
+
 func (c *context) Render(code int, r render.Renderer) error {
+	c.response.WriteHeader(code)
+	return r.Render(c.response)
+}
+
+func (c *context) RenderWith(code int, r render.Renderer) error {
 	c.response.WriteHeader(code)
 	return r.Render(c.response)
 }
@@ -118,33 +146,27 @@ func (c *context) RenderHTML(code int, name string, data interface{}) error {
 }
 
 func (c *context) Blob(code int, contentType string, data []byte) error {
-	c.response.WriteHeader(code)
-	return render.Blob(c.response, contentType, data)
+	return render.Blob(c.response, code, contentType, data)
 }
 
 func (c *context) XML(code int, data interface{}) error {
-	c.response.WriteHeader(code)
-	return render.XML(c.response, data)
+	return render.XML(c.response, code, data)
 }
 
 func (c *context) JSON(code int, data interface{}) error {
-	c.response.WriteHeader(code)
-	return render.JSON(c.response, data)
+	return render.JSON(c.response, code, data)
 }
 
 func (c *context) JSONP(code int, callback string, data interface{}) error {
-	c.response.WriteHeader(code)
-	return render.JSONP(c.response, callback, data)
+	return render.JSONP(c.response, code, callback, data)
 }
 
 func (c *context) String(code int, format string, args ...interface{}) error {
-	c.response.WriteHeader(code)
-	return render.Text(c.response, sprintf(format, args...))
+	return render.Text(c.response, code, sprintf(format, args...))
 }
 
 func (c *context) HTML(code int, data string) error {
-	c.response.WriteHeader(code)
-	return render.HTML(c.response, data)
+	return render.HTML(c.response, code, data)
 }
 
 func (c *context) Redirect(code int, url string) error {
@@ -172,15 +194,42 @@ func (c *context) File(file string) (err error) {
 		}
 		defer f.Close()
 		if fi, err = f.Stat(); err != nil {
-			return
+			return c.route.NotFoundHandler(c)
 		}
 	}
 	http.ServeContent(c.Response(), c.Request(), fi.Name(), fi.ModTime(), f)
 	return
 }
 
+func (c *context) FileFromFS(file string, fs http.FileSystem) error {
+	defer func(old string) {
+		c.request.URL.Path = old
+	}(c.request.URL.Path)
+
+	c.request.URL.Path = file
+
+	http.FileServer(fs).ServeHTTP(c.response, c.request)
+	return nil
+}
+
 func (c *context) Logger() Logger {
 	return c.route.Logger()
+}
+
+func (c *context) Next() error {
+	return c.NextWith(c)
+}
+
+func (c *context) NextWith(ctx Context) (err error) {
+	c.index++
+	if c.index < len(c.route.Handlers) {
+		err = c.route.Handlers[c.index](ctx)
+	}
+	if err != nil {
+		c.route.ErrorHandler(err, ctx)
+		return nil
+	}
+	return
 }
 
 func (c *context) reset(r *http.Request, w http.ResponseWriter) {
@@ -188,16 +237,4 @@ func (c *context) reset(r *http.Request, w http.ResponseWriter) {
 	c.response.reset(w)
 	c.pvalues = c.pvalues[:0]
 	c.index = -1
-}
-
-func (c *context) Next() (err error) {
-	c.index++
-	if c.index < len(c.route.Handlers) {
-		err = c.route.Handlers[c.index](c)
-	}
-	if err != nil {
-		c.route.ErrorHandler(err, c)
-		return nil
-	}
-	return
 }

@@ -39,14 +39,19 @@
           v1.GET("/posts/{title}", func(c forest.Context) error {
               return c.JSON(http.StatusOK, forest.H{"title": c.Param("title")})
           })
+          v1.POST("/posts", func(c forest.Context) error {
+              return c.JSON(http.StatusOK, forest.H{"title": c.Param("title")})
+          })
       }
 
-      v2 := r.Host("v2.localhost:8000", "/v2")
+      v2 := forest.NewHost("v2.localhost:8000")
       {
           v2.GET("/posts/{title}", func(c forest.Context) error {
               return c.JSON(http.StatusOK, forest.H{"title": c.Param("title")})
           })
       }
-      r.Run("127.0.0.1:8000")
+
+      r.Mount("", v2)
+      r.Start("127.0.0.1:8000")
   }
 #+end_src
