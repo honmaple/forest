@@ -110,7 +110,7 @@ func (e *Engine) addRoute(route *Route) {
 }
 
 func (e *Engine) Routes() []*Route {
-	routes := make([]*Route, 0)
+	routes := make([]*Route, 0, len(e.router.routes))
 	for _, r := range e.router.routes {
 		routes = append(routes, r)
 	}
@@ -173,9 +173,13 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c.reset(r, w)
 	defer e.pool.Put(c)
 
-	path := r.URL.EscapedPath()
+	// path := r.URL.EscapedPath()
+	// if path == "" {
+	//	path = "/"
+	// }
+	path := r.URL.RawPath
 	if path == "" {
-		path = "/"
+		path = r.URL.Path
 	}
 
 	route, found := e.router.Find(r.Host, r.Method, path, c)

@@ -26,7 +26,7 @@ type (
 	Routes []*Route
 	Router struct {
 		hosts  map[string]*node
-		routes Routes
+		routes map[string]*Route
 	}
 )
 
@@ -80,7 +80,11 @@ func (r *Router) Insert(route *Route) {
 		r.hosts[route.Host] = root
 	}
 	root.insert(route)
-	r.routes = append(r.routes, route)
+
+	key := route.Method + route.Path
+	if _, ok := r.routes[key]; !ok {
+		r.routes[key] = route
+	}
 }
 
 func (r *Router) Find(host, method, path string, c *context) (*Route, bool) {
@@ -91,7 +95,7 @@ func (r *Router) Find(host, method, path string, c *context) (*Route, bool) {
 }
 
 func newRouter() *Router {
-	return &Router{hosts: make(map[string]*node)}
+	return &Router{hosts: make(map[string]*node), routes: make(map[string]*Route)}
 }
 
 func (r *Route) Logger() Logger {

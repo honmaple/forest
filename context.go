@@ -85,6 +85,9 @@ func (c *context) Param(key string) string {
 }
 
 func (c *context) Params() map[string]string {
+	if c.route == nil {
+		return nil
+	}
 	if len(c.route.pnames) == 0 {
 		return nil
 	}

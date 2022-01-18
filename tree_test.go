@@ -21,6 +21,7 @@ func TestTree(t *testing.T) {
 		"/path/{var1:int}",
 		"/path/{var1:int}-{var2:int}",
 		"/path/{var1}/{var2:int}",
+		"/path/{var1:[0-9]+}/regex",
 		"/path/{var1:path}-1/{var2:int}",
 		"/path/{var1:int}/{var2:int}/{var3:path}",
 		"/path/{var1:path}/{var2:int}/test/{var3:path}",
@@ -48,6 +49,13 @@ func TestTree(t *testing.T) {
 		{
 			"/path/s", "/path/{var1}",
 			map[string]string{"var1": "s"},
+		},
+		{
+			"/path/100/regex", "/path/{var1:[0-9]+}/regex",
+			map[string]string{"var1": "100"},
+		},
+		{
+			"/path/100s/regex", "nil", nil,
 		},
 		{
 			"/path/1-3", "/path/{var1:int}-{var2:int}",

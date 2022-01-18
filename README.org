@@ -102,20 +102,20 @@
 ** Custom
 *** Custom Middleware
     #+begin_src go
-      func mymiddleware(c forest.Context) error {
+      func MyMiddleware(c forest.Context) error {
           // do something
           // c.Next() is required, or else your handler will not execute
           return c.Next()
       }
       router := forest.New()
       // with root
-      router.Use(mymiddleware)
+      router.Use(MyMiddleware)
       // with group
-      group := router.Group("/api/v1", mymiddleware)
+      group := router.Group("/api/v1", MyMiddleware)
       // with special handler
       group.GET("/", func(c forest.Context) error {
           return nil
-      }, mymiddleware)
+      }, MyMiddleware)
     #+end_src
 
 *** Custom Logger
@@ -177,4 +177,38 @@
           // doing somthing
           return c.NextWith(&MyContext{c})
       }
+    #+end_src
+
+*** Custom URL Param
+    #+begin_src go
+      import (
+          "github.com/google/uuid"
+      )
+
+      type UUIDMatcher struct {
+      }
+
+      func (s *UUIDMatcher) Name() string {
+          return "uuid"
+      }
+
+      func (s *UUIDMatcher) Match(path string) (int, bool) {
+          if len(path) < 18 {
+              return -1, false
+          }
+          _, err := uuid.Parse(path[:18])
+          if err != nil {
+              return -1, false
+          }
+          return 18, false
+      }
+
+      func NewUUIDMatcher(pname string, ptype string) forest.Matcher {
+          return &UUIDMatcher{}
+      }
+
+      forest.RegisterURLParam("uuid", NewUUIDMatcher)
+
+      router := forest.New()
+      router.GET('/api/v1/user/{pk:uuid}', handler)
     #+end_src

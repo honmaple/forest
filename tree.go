@@ -22,23 +22,24 @@ const (
 	akind              // path with anything
 )
 
-var ptypes = map[string]uint8{
-	"int":   0,
-	"float": 0,
-	"":      1,
-	"str":   2,
-	"path":  3,
-}
+var (
+	ptypes = map[string]uint8{
+		"int":   0,
+		"float": 0,
+		"":      1,
+		"str":   2,
+		"path":  3,
+	}
+	matchers = map[string]func(string, string) Matcher{}
+)
 
 type (
 	node struct {
 		prefix   string
 		kind     uint8
-		ptype    string
-		regex    *regexp.Regexp
+		matcher  Matcher
 		children [akind + 1]nodes
-		// routes   map[string]*Route
-		routes Routes
+		routes   Routes
 	}
 	nodes []*node
 )
@@ -53,7 +54,7 @@ func (ns nodes) Less(i, j int) bool {
 	case skind:
 		return ni.prefix[0] < nj.prefix[0]
 	case pkind:
-		return ptypes[ni.ptype] < ptypes[nj.ptype]
+		return ptypes[ni.matcher.Name()] < ptypes[nj.matcher.Name()]
 	}
 	return false
 }
@@ -87,21 +88,22 @@ func (s *node) insertStatic(path string, route *Route) *node {
 			return root
 		}
 		cl := commonPrefix(root.prefix, prefix)
-		// 没有相同前缀
+		// no common prefix
 		if cl == 0 {
-			if child := root.findChild(skind, "", prefix[0]); child != nil {
+			if child := root.findStaticChild(prefix[0]); child != nil {
 				root = child
 				continue
 			}
-			child := newNode(skind, "", prefix, route)
+			child := newNode(skind, prefix, route)
 			root.addChild(child)
 			return child
 		}
 
-		// 有相同前缀, 但节点不存在, 需要分裂, 父节点变子节点
+		// has common prefix, but node is not exists, parent node need split
 		if cl < pl {
-			child := newNode(root.kind, root.ptype, root.prefix[cl:], nil)
+			child := newNode(root.kind, root.prefix[cl:], nil)
 			child.routes = root.routes
+			child.matcher = root.matcher
 			child.children = root.children
 
 			root.kind = skind
@@ -117,24 +119,23 @@ func (s *node) insertStatic(path string, route *Route) *node {
 				return root
 			}
 			// /user和/usad
-			child = newNode(skind, "", prefix[cl:], route)
+			child = newNode(skind, prefix[cl:], route)
 			root.addChild(child)
 			return child
 		}
 
 		if cl < sl {
-			// indices
-			// 有相同前缀, 并且节点存在 /user和/user123
+			// has common prefix, and node is exists /user和/user123
 			prefix = prefix[cl:]
-			if child := root.findChild(skind, "", prefix[0]); child != nil {
+			if child := root.findStaticChild(prefix[0]); child != nil {
 				root = child
 				continue
 			}
-			child := newNode(skind, "", prefix, route)
+			child := newNode(skind, prefix, route)
 			root.addChild(child)
 			return child
 		} else {
-			// 相同节点
+			// same node
 			root.addRoute(route)
 		}
 		return root
@@ -142,23 +143,29 @@ func (s *node) insertStatic(path string, route *Route) *node {
 	return root
 }
 
-func (s *node) insertPath(pname string, route *Route) *node {
-	child := s.findChild(akind, "", '*')
-	if child == nil {
-		child = newNode(akind, "", "*", route)
-		s.addChild(child)
-	}
-	return child
-}
-
 func (s *node) insertParam(pname, ptype string, route *Route) *node {
-	kind := pkind
-	if _, ok := ptypes[ptype]; !ok {
+	var (
+		kind    uint8 = pkind
+		label   byte  = ':'
+		matcher Matcher
+	)
+	if ptype == "path" {
+		kind = akind
+		label = '*'
+	} else if IsRegexURLParam(ptype) {
 		kind = rkind
 	}
-	child := s.findChild(kind, ptype, ':')
+
+	mc, ok := matchers[ptype]
+	if ok {
+		matcher = mc(pname, ptype)
+	} else {
+		matcher = paramMatcher(pname, ptype)
+	}
+	child := s.findParamChild(kind, ptype, label)
 	if child == nil {
-		child = newNode(kind, ptype, ":", route)
+		child = newNode(kind, string(label), route)
+		child.matcher = matcher
 		s.addChild(child)
 	}
 	return child
@@ -204,7 +211,7 @@ func (s *node) insert(route *Route) {
 				ptype = params[1]
 			}
 			// route.pnames = append(route.pnames, pname)
-			route.pnames = append(route.pnames, routeParam{pname, start, e})
+			route.pnames = append(route.pnames, routeParam{pname, start, e + 1})
 			if e == l-1 {
 				root = root.insertParam(pname, ptype, route)
 			} else {
@@ -250,7 +257,7 @@ func (s *node) insert(route *Route) {
 				pname = path[start+1 : e]
 			}
 			route.pnames = append(route.pnames, routeParam{pname, start, e})
-			root = root.insertPath(pname, route)
+			root = root.insertParam(pname, "path", route)
 
 			lstart = len(path)
 			start = lstart
@@ -267,19 +274,12 @@ func (s *node) addRoute(route *Route) {
 	if route == nil {
 		return
 	}
-	if v := s.routes.find(route.Method); v != nil {
-
+	v := s.routes.find(route.Method)
+	if v != nil {
+		// panic("forest: path '" + route.Path + "' conflicts with existing route '" + v.Path + "'")
 	} else {
 		s.routes = append(s.routes, route)
 	}
-	// if s.routes == nil {
-	//	s.routes = make(map[string]*Route)
-	// }
-	// if _, ok := s.routes[route.Method]; ok {
-	//	// panic("route has been exists")
-	// } else {
-	//	s.routes[route.Method] = route
-	// }
 }
 
 func (s *node) addChild(child *node) {
@@ -287,49 +287,58 @@ func (s *node) addChild(child *node) {
 	s.children[child.kind].Sort()
 }
 
-func (s *node) findChild(kind uint8, ptype string, l byte) *node {
+func (s *node) findParamChild(kind uint8, ptype string, l byte) *node {
 	for _, child := range s.children[kind] {
-		if child.prefix[0] == l && child.ptype == ptype {
-			return child
+		if child.prefix[0] == l {
+			if child.matcher == nil || child.matcher.Name() == ptype {
+				return child
+			}
 		}
 	}
 	return nil
+}
+
+func (s *node) findStaticChild(l byte) *node {
+	children := s.children[skind]
+	num := len(children)
+	if num == 0 {
+		return nil
+	}
+	idx := 0
+	i, j := 0, num-1
+	for i <= j {
+		idx = i + (j-i)/2
+		if l > children[idx].prefix[0] {
+			i = idx + 1
+		} else if l < children[idx].prefix[0] {
+			j = idx - 1
+		} else {
+			i = num
+		}
+	}
+	if children[idx].prefix[0] != l {
+		return nil
+	}
+	return children[idx]
 }
 
 func (s *node) matchChild(path string, c *context) *node {
 	if path == "" {
 		return s
 	}
-	for kind, cs := range s.children {
-		if len(cs) == 0 {
-			continue
-		}
-
+	for kind := range s.children {
 		label := path[0]
 		switch uint8(kind) {
 		case skind:
-			// 二分法查找前缀
-			num := len(cs)
-			idx := 0
-			i, j := 0, num-1
-			for i <= j {
-				idx = i + (j-i)/2
-				if label > cs[idx].prefix[0] {
-					i = idx + 1
-				} else if label < cs[idx].prefix[0] {
-					j = idx - 1
-				} else {
-					i = num
-				}
-			}
-			if cs[idx].prefix[0] != label {
+			child := s.findStaticChild(label)
+			if child == nil {
 				continue
 			}
-			if t := cs[idx].match(path, c); t != nil {
+			if t := child.match(path, c); t != nil {
 				return t
 			}
 		default:
-			for _, child := range cs {
+			for _, child := range s.children[kind] {
 				if t := child.match(path, c); t != nil {
 					return t
 				}
@@ -345,110 +354,35 @@ func (s *node) match(path string, c *context) *node {
 		if !strings.HasPrefix(path, s.prefix) {
 			return nil
 		}
-		return s.matchChild(path[len(s.prefix):], c)
-	case pkind:
+		pl := len(s.prefix)
+		if len(path) == pl {
+			return s
+		}
+		return s.matchChild(path[pl:], c)
+	case pkind, rkind, akind:
 		i := 0
-		switch s.ptype {
-		case "":
-			i = strings.IndexByte(path, '/')
-			if i == 0 {
+		for i < len(path) {
+			e, loop := s.matcher.Match(path[i:])
+			if e == -1 {
 				return nil
 			}
-			if i == -1 {
-				c.pvalues = append(c.pvalues, path)
+			c.pvalues = append(c.pvalues, path[:i+e])
+			if e == len(path[i:]) {
 				return s
 			}
-		case "int":
-			i = strings.IndexFunc(path, func(r rune) bool { return !unicode.IsDigit(r) })
-			if i == 0 {
-				return nil
+			if child := s.matchChild(path[i+e:], c); child != nil {
+				return child
 			}
-			if i == -1 {
-				c.pvalues = append(c.pvalues, path)
-				return s
+			c.pvalues = c.pvalues[:len(c.pvalues)-1]
+			if !loop {
+				break
 			}
-		case "float":
-			dot := false
-			i = strings.IndexFunc(path, func(r rune) bool {
-				if r == '.' {
-					if dot {
-						return true
-					}
-					dot = true
-					return false
-				}
-				return !unicode.IsDigit(r)
-			})
-			if i == 0 {
-				return nil
-			}
-			if i == -1 {
-				c.pvalues = append(c.pvalues, path)
-				return s
-			}
-		case "str":
-			if path[0] == '/' {
-				return nil
-			}
-			for i = 1; i < len(path); i++ {
-				c.pvalues = append(c.pvalues, path[:i])
-				if t := s.matchChild(path[i:], c); t != nil {
-					return t
-				}
-				c.pvalues = c.pvalues[:len(c.pvalues)-1]
-				if path[i] == '/' {
-					break
-				}
-			}
-			if i == len(path) {
-				c.pvalues = append(c.pvalues, path[:i])
-				return s
-			}
-			return nil
-		case "path":
-			for i = 1; i < len(path); i++ {
-				c.pvalues = append(c.pvalues, path[:i])
-				if t := s.matchChild(path[i:], c); t != nil {
-					return t
-				}
-				c.pvalues = c.pvalues[:len(c.pvalues)-1]
-			}
-			if i == len(path) {
-				c.pvalues = append(c.pvalues, path[:i])
-				return s
-			}
-			return nil
+			i = i + e
 		}
-		c.pvalues = append(c.pvalues, path[:i])
-		if t := s.matchChild(path[i:], c); t != nil {
-			return t
-		}
-		c.pvalues = c.pvalues[:len(c.pvalues)-1]
 		return nil
-	case rkind:
-		if s.regex == nil {
-			return nil
-		}
-		e := strings.IndexByte(path, '/')
-		if e == -1 {
-			e = len(path)
-		}
-		is := s.regex.FindStringIndex(path[:e])
-		if len(is) == 0 {
-			return nil
-		}
-		i := is[1]
-		c.pvalues = append(c.pvalues, path[:i])
-		if t := s.matchChild(path[i:], c); t != nil {
-			return t
-		}
-		c.pvalues = c.pvalues[:len(c.pvalues)-1]
+	default:
 		return nil
-	case akind:
-		c.pvalues = append(c.pvalues, path)
-		return s
 	}
-	return nil
 }
 
 func (s *node) search(method, path string, c *context) (*Route, bool) {
@@ -456,7 +390,6 @@ func (s *node) search(method, path string, c *context) (*Route, bool) {
 	if root == nil || root.routes == nil {
 		return nil, false
 	}
-	// return root.routes[method], len(root.routes) > 0
 	return root.routes.find(method), len(root.routes) > 0
 }
 
@@ -479,18 +412,139 @@ func (s *node) Print(l int) {
 	}
 }
 
-func newNode(kind uint8, ptype, prefix string, route *Route) *node {
-	t := &node{
+func newNode(kind uint8, prefix string, route *Route) *node {
+	n := &node{
 		kind:   kind,
-		ptype:  ptype,
 		prefix: prefix,
 	}
-	t.addRoute(route)
-	if kind == rkind && ptype != "" {
+	n.addRoute(route)
+	return n
+}
+
+type (
+	Matcher interface {
+		Name() string
+		Match(string) (int, bool)
+	}
+	pMatcher struct {
+		ptype string
+		regex *regexp.Regexp
+	}
+)
+
+func (p *pMatcher) Name() string {
+	return p.ptype
+}
+
+func (p *pMatcher) Match(path string) (int, bool) {
+	switch p.ptype {
+	case "":
+		return p.match(path)
+	case "str":
+		return p.matchStr(path)
+	case "int":
+		return p.matchInt(path)
+	case "float":
+		return p.matchFloat(path)
+	case "path":
+		return p.matchPath(path)
+	default:
+		return p.matchRegex(path)
+	}
+}
+
+func (p *pMatcher) match(path string) (int, bool) {
+	i := strings.IndexByte(path, '/')
+	if i == 0 {
+		return -1, false
+	}
+	if i == -1 {
+		return len(path), false
+	}
+	return i, false
+}
+
+func (p *pMatcher) matchInt(path string) (int, bool) {
+	i := strings.IndexFunc(path, func(r rune) bool {
+		return !unicode.IsDigit(r)
+	})
+	if i == 0 {
+		return -1, false
+	}
+	if i == -1 {
+		return len(path), false
+	}
+	return i, false
+}
+
+func (p *pMatcher) matchFloat(path string) (int, bool) {
+	dot := false
+	i := strings.IndexFunc(path, func(r rune) bool {
+		if r == '.' {
+			if dot {
+				return true
+			}
+			dot = true
+			return false
+		}
+		return !unicode.IsDigit(r)
+	})
+	if i == 0 {
+		return -1, false
+	}
+	if i == -1 {
+		return len(path), false
+	}
+	return i, false
+}
+
+func (p *pMatcher) matchStr(path string) (int, bool) {
+	if path[0] == '/' {
+		return -1, false
+	}
+	return 1, true
+}
+
+func (p *pMatcher) matchPath(path string) (int, bool) {
+	return 1, true
+}
+
+func (p *pMatcher) matchRegex(path string) (int, bool) {
+	if p.regex == nil {
+		return -1, false
+	}
+	e := strings.IndexByte(path, '/')
+	if e == -1 {
+		e = len(path)
+	}
+	is := p.regex.FindStringIndex(path[:e])
+	if len(is) == 0 {
+		return -1, false
+	}
+	return is[1], false
+}
+
+func paramMatcher(pname, ptype string) Matcher {
+	p := &pMatcher{ptype: ptype}
+	if IsRegexURLParam(ptype) {
 		if ptype[0] != '^' {
 			ptype = "^" + ptype
 		}
-		t.regex = regexp.MustCompile(ptype)
+		p.regex = regexp.MustCompile(ptype)
 	}
-	return t
+	return p
+}
+
+func IsRegexURLParam(ptype string) bool {
+	if _, ok := ptypes[ptype]; ok {
+		return false
+	}
+	if _, ok := matchers[ptype]; ok {
+		return false
+	}
+	return true
+}
+
+func RegisterURLParam(ptype string, matcher func(string, string) Matcher) {
+	matchers[ptype] = matcher
 }
