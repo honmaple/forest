@@ -5,18 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 )
 
 type (
-	routeParam struct {
-		key   string
+	Param struct {
 		start int
 		end   int
+		name  string
 	}
+
 	Route struct {
-		pnames   []routeParam
 		group    *Group
+		pnames   []Param
 		Name     string        `json:"name"`
 		Host     string        `json:"host"`
 		Path     string        `json:"path"`
@@ -29,40 +29,6 @@ type (
 		routes map[string]*Route
 	}
 )
-
-type Params map[string]string
-
-func (p Params) Has(key string) bool {
-	_, ok := p[key]
-	return ok
-}
-
-func (p Params) String(key string) (val string) {
-	if val, ok := p[key]; ok {
-		return val
-	}
-	return
-}
-
-func (p Params) Int(key string) (val int) {
-	if str, ok := p[key]; ok {
-		val, err := strconv.Atoi(str)
-		if err == nil {
-			return val
-		}
-	}
-	return
-}
-
-func (p Params) Uint(key string) (val uint) {
-	if str, ok := p[key]; ok {
-		val, err := strconv.ParseUint(str, 10, 0)
-		if err == nil {
-			return uint(val)
-		}
-	}
-	return
-}
 
 func (rs Routes) find(method string) *Route {
 	for _, r := range rs {

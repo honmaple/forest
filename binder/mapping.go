@@ -8,17 +8,24 @@ import (
 )
 
 func bindData(value interface{}, dst map[string][]string, tagName string) error {
-	v := reflect.ValueOf(value)
+	val := reflect.ValueOf(value)
 
-	for v.Kind() == reflect.Ptr {
-		v = v.Elem()
+	for val.Kind() == reflect.Ptr {
+		val = val.Elem()
 	}
 
-	if v.Kind() != reflect.Struct {
+	if val.Kind() == reflect.Map {
+		for k, v := range dst {
+			val.SetMapIndex(reflect.ValueOf(k), reflect.ValueOf(v[0]))
+		}
+		return nil
+	}
+
+	if val.Kind() != reflect.Struct {
 		return errors.New("not struct")
 	}
 
-	t := v.Type()
+	t := val.Type()
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		tag := field.Tag.Get(tagName)
@@ -40,7 +47,7 @@ func bindData(value interface{}, dst map[string][]string, tagName string) error 
 			tag = opts[0]
 		}
 
-		vfield := v.Field(i)
+		vfield := val.Field(i)
 		if omitempty && vfield.IsZero() {
 			continue
 		}

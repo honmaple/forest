@@ -75,9 +75,9 @@ func (c *context) Get(key string) interface{} {
 	return nil
 }
 
-func (c *context) Param(key string) string {
+func (c *context) Param(name string) string {
 	for i, p := range c.route.pnames {
-		if i < len(c.pvalues) && p.key == key {
+		if i < len(c.pvalues) && p.name == name {
 			return c.pvalues[i]
 		}
 	}
@@ -85,16 +85,13 @@ func (c *context) Param(key string) string {
 }
 
 func (c *context) Params() map[string]string {
-	if c.route == nil {
+	if c.route == nil || len(c.route.pnames) == 0 {
 		return nil
 	}
-	if len(c.route.pnames) == 0 {
-		return nil
-	}
-	params := make(Params)
+	params := make(map[string]string)
 	for i, p := range c.route.pnames {
 		if i < len(c.pvalues) {
-			params[p.key] = c.pvalues[i]
+			params[p.name] = c.pvalues[i]
 		}
 	}
 	return params

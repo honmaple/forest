@@ -3,9 +3,11 @@ package binder
 import (
 	"encoding/json"
 	"encoding/xml"
-	"github.com/honmaple/forest/render"
+	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/honmaple/forest/render"
 )
 
 const defaultMemory = 32 << 20
@@ -91,15 +93,18 @@ func Bind(req *http.Request, dst interface{}) (err error) {
 	if method != http.MethodPost && method != http.MethodPut && method != http.MethodPatch {
 		return Query.Bind(req, dst)
 	}
-	ctype := req.Header.Get("Content-Type")
+	ctype := req.Header.Get(render.ContentType)
 	if strings.Contains(ctype, "/x-www-form-urlencoded") {
 		return Form.Bind(req, dst)
 	}
-	if strings.HasPrefix(ctype, render.MIMEApplicationJSON) {
+	if strings.Contains(ctype, "/form-data") {
+		return MultipartForm.Bind(req, dst)
+	}
+	if strings.HasPrefix(ctype, render.ContentTypeJSON) {
 		return JSON.Bind(req, dst)
 	}
-	if strings.HasPrefix(ctype, render.MIMEApplicationXML) {
+	if strings.HasPrefix(ctype, render.ContentTypeXML) {
 		return XML.Bind(req, dst)
 	}
-	return nil
+	return errors.New("unknown content type: " + ctype)
 }

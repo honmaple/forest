@@ -106,7 +106,10 @@ func NewHost(host string) *Engine {
 
 func (e *Engine) addRoute(route *Route) {
 	e.router.Insert(route)
-	return
+}
+
+func (e *Engine) Router() *Router {
+	return e.router
 }
 
 func (e *Engine) Routes() []*Route {

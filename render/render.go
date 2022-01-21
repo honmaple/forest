@@ -6,18 +6,18 @@ import (
 )
 
 const (
-	charsetUTF8                          = "charset=UTF-8"
-	MIMETextPlain                        = "text/plain"
-	MIMETextPlainCharsetUTF8             = MIMETextPlain + "; " + charsetUTF8
-	MIMETextHTML                         = "text/html"
-	MIMETextHTMLCharsetUTF8              = MIMETextHTML + "; " + charsetUTF8
-	MIMEApplicationXML                   = "application/xml"
-	MIMEApplicationXMLCharsetUTF8        = MIMEApplicationXML + "; " + charsetUTF8
-	MIMEApplicationJSON                  = "application/json"
-	MIMEApplicationJSONCharsetUTF8       = MIMEApplicationJSON + "; " + charsetUTF8
-	MIMEApplicationJavaScript            = "application/javascript"
-	MIMEApplicationJavaScriptCharsetUTF8 = MIMEApplicationJavaScript + "; " + charsetUTF8
-	MIMEMultipartForm                    = "multipart/form-data"
+	charsetUTF8                 = "charset=UTF-8"
+	ContentType                 = "Content-Type"
+	ContentTypeText             = "text/plain"
+	ContentTypeTextCharsetUTF8  = ContentTypeText + "; " + charsetUTF8
+	ContentTypeHTML             = "text/html"
+	ContentTypeHTMLCharsetUTF8  = ContentTypeHTML + "; " + charsetUTF8
+	ContentTypeXML              = "application/xml"
+	ContentTypeXMLCharsetUTF8   = ContentTypeXML + "; " + charsetUTF8
+	ContentTypeJSON             = "application/json"
+	ContentTypeJSONCharsetUTF8  = ContentTypeJSON + "; " + charsetUTF8
+	ContentTypeJSONP            = "application/javascript"
+	ContentTypeJSONPCharsetUTF8 = ContentTypeJSONP + "; " + charsetUTF8
 )
 
 type Renderer interface {
@@ -26,8 +26,8 @@ type Renderer interface {
 
 func writeContentType(w http.ResponseWriter, v string) {
 	header := w.Header()
-	if header.Get("Content-Type") == "" {
-		header.Set("Content-Type", v)
+	if header.Get(ContentType) == "" {
+		header.Set(ContentType, v)
 	}
 }
 
@@ -44,15 +44,15 @@ func Blob(w http.ResponseWriter, code int, contentType string, data []byte) (err
 }
 
 func Text(w http.ResponseWriter, code int, data string) error {
-	return Blob(w, code, MIMETextPlainCharsetUTF8, []byte(data))
+	return Blob(w, code, ContentTypeTextCharsetUTF8, []byte(data))
 }
 
 func HTML(w http.ResponseWriter, code int, data string) error {
-	return Blob(w, code, MIMETextHTMLCharsetUTF8, []byte(data))
+	return Blob(w, code, ContentTypeHTMLCharsetUTF8, []byte(data))
 }
 
 func JSON(w http.ResponseWriter, code int, data interface{}) error {
-	writeContentType(w, MIMEApplicationJSONCharsetUTF8)
+	writeContentType(w, ContentTypeJSONCharsetUTF8)
 	if code > 0 {
 		w.WriteHeader(code)
 	}
@@ -60,7 +60,7 @@ func JSON(w http.ResponseWriter, code int, data interface{}) error {
 }
 
 func JSONP(w http.ResponseWriter, code int, callback string, data interface{}) (err error) {
-	writeContentType(w, MIMEApplicationJavaScriptCharsetUTF8)
+	writeContentType(w, ContentTypeJSONPCharsetUTF8)
 	if code > 0 {
 		w.WriteHeader(code)
 	}
@@ -76,7 +76,7 @@ func JSONP(w http.ResponseWriter, code int, callback string, data interface{}) (
 }
 
 func XML(w http.ResponseWriter, code int, data interface{}) error {
-	writeContentType(w, MIMEApplicationJSONCharsetUTF8)
+	writeContentType(w, ContentTypeJSONCharsetUTF8)
 	if code > 0 {
 		w.WriteHeader(code)
 	}
