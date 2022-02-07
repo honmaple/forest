@@ -653,28 +653,24 @@ func forestHandler(method, path string) forest.HandlerFunc {
 
 func BenchmarkForestStatic(b *testing.B) {
 	e := forest.New()
-	e.Debug = false
 	loadForestRoutes(e, static)
 	benchmarkRoutes(b, e, static)
 }
 
 func BenchmarkForestGitHubAPI(b *testing.B) {
 	e := forest.New()
-	e.Debug = false
 	loadForestRoutes(e, githubAPI)
 	benchmarkRoutes(b, e, githubAPI)
 }
 
 func BenchmarkForestGplusAPI(b *testing.B) {
 	e := forest.New()
-	e.Debug = false
 	loadForestRoutes(e, gplusAPI)
 	benchmarkRoutes(b, e, gplusAPI)
 }
 
 func BenchmarkForestParseAPI(b *testing.B) {
 	e := forest.New()
-	e.Debug = false
 	loadForestRoutes(e, parseAPI)
 	benchmarkRoutes(b, e, parseAPI)
 }

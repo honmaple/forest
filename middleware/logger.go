@@ -14,19 +14,26 @@ import (
 
 type (
 	LoggerConfig struct {
+		Skipper    Skipper
 		Format     string
 		TimeFormat string
 		template   *fasttemplate.Template
-		pool       sync.Pool
+		bufferPool sync.Pool
 	}
 )
 
-var DefaultLoggerConfig = &LoggerConfig{
-	Format:     "[${time_local}] ${status} ${method} ${path} (${remote_addr}) ${latency_human}",
-	TimeFormat: "2006-01-02 15:04:05.00000",
+var (
+	DefaultLoggerConfig = LoggerConfig{
+		Format:     "[${time_local}] ${status} ${method} ${path} (${remote_addr}) ${latency_human}",
+		TimeFormat: "2006-01-02 15:04:05.00000",
+	}
+)
+
+func Logger() forest.HandlerFunc {
+	return LoggerWithConfig(DefaultLoggerConfig)
 }
 
-func LoggerWithConfig(config *LoggerConfig) forest.HandlerFunc {
+func LoggerWithConfig(config LoggerConfig) forest.HandlerFunc {
 	if config.Format == "" {
 		config.Format = DefaultLoggerConfig.Format
 	}
@@ -34,21 +41,24 @@ func LoggerWithConfig(config *LoggerConfig) forest.HandlerFunc {
 		config.TimeFormat = DefaultLoggerConfig.TimeFormat
 	}
 	config.template = fasttemplate.New(config.Format, "${", "}")
-	config.pool = sync.Pool{
+	config.bufferPool = sync.Pool{
 		New: func() interface{} {
 			return bytes.NewBuffer(make([]byte, 256))
 		},
 	}
 	return func(c forest.Context) error {
+		if config.Skipper != nil && config.Skipper(c) {
+			return c.Next()
+		}
 		start := time.Now()
 		req := c.Request()
 		err := c.Next()
 		res := c.Response()
 		stop := time.Now()
 
-		buf := config.pool.Get().(*bytes.Buffer)
+		buf := config.bufferPool.Get().(*bytes.Buffer)
 		buf.Reset()
-		defer config.pool.Put(buf)
+		defer config.bufferPool.Put(buf)
 
 		if _, err := config.template.ExecuteFunc(buf, func(w io.Writer, tag string) (int, error) {
 			switch tag {
@@ -90,8 +100,4 @@ func LoggerWithConfig(config *LoggerConfig) forest.HandlerFunc {
 		c.Logger().Println(buf.String())
 		return err
 	}
-}
-
-func Logger() forest.HandlerFunc {
-	return LoggerWithConfig(DefaultLoggerConfig)
 }

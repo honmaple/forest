@@ -43,6 +43,10 @@ func Blob(w http.ResponseWriter, code int, contentType string, data []byte) (err
 	return
 }
 
+func Bytes(w http.ResponseWriter, code int, data []byte) error {
+	return Blob(w, code, ContentTypeTextCharsetUTF8, data)
+}
+
 func Text(w http.ResponseWriter, code int, data string) error {
 	return Blob(w, code, ContentTypeTextCharsetUTF8, []byte(data))
 }

@@ -10,7 +10,7 @@
      )
 
      func main() {
-         r := forest.New()
+         r := forest.New(forest.Debug())
          r.Use(middleware.Recover())
          r.Use(middleware.Logger())
          r.GET("/", func(c forest.Context) error {

@@ -22,21 +22,10 @@ const (
 	akind              // path with anything
 )
 
-var (
-	ptypes = map[string]uint8{
-		"int":   0,
-		"float": 0,
-		"":      1,
-		"str":   2,
-		"path":  3,
-	}
-	matchers = map[string]func(string, string) Matcher{}
-)
-
 type (
 	node struct {
-		prefix   string
 		kind     uint8
+		prefix   string
 		routes   Routes
 		matcher  Matcher
 		children [akind + 1]nodes
@@ -54,10 +43,9 @@ func (ns nodes) Less(i, j int) bool {
 	switch ni.kind {
 	case skind:
 		return ni.prefix[0] < nj.prefix[0]
-	case pkind:
-		return ptypes[ni.matcher.Name()] < ptypes[nj.matcher.Name()]
+	default:
+		return false
 	}
-	return false
 }
 
 func commonPrefix(a, b string) int {
@@ -150,19 +138,20 @@ func (s *node) insertParam(pname, ptype string, route *Route) *node {
 		label   byte  = ':'
 		matcher Matcher
 	)
-	if ptype == "path" {
-		kind = akind
-		label = '*'
-	} else if IsRegexURLParam(ptype) {
-		kind = rkind
-	}
-
 	mc, ok := matchers[ptype]
 	if ok {
 		matcher = mc(pname, ptype)
 	} else {
-		matcher = paramMatcher(pname, ptype)
+		matcher = regexMatcher(pname, ptype)
 	}
+
+	if ptype == "path" {
+		kind = akind
+		label = '*'
+	} else if !ok {
+		kind = rkind
+	}
+
 	child := s.findParamChild(kind, ptype, label)
 	if child == nil {
 		child = newNode(kind, string(label), route)
@@ -328,6 +317,9 @@ func (s *node) matchChild(path string, c *context) *node {
 	if path == "" {
 		return s
 	}
+	if !s.hasNext {
+		return nil
+	}
 	for kind := range s.children {
 		switch uint8(kind) {
 		case skind:
@@ -433,6 +425,16 @@ type (
 	}
 )
 
+var (
+	matchers = map[string]func(string, string) Matcher{
+		"":      paramMatcher,
+		"int":   paramMatcher,
+		"float": paramMatcher,
+		"str":   paramMatcher,
+		"path":  paramMatcher,
+	}
+)
+
 func (p *pMatcher) Name() string {
 	return p.ptype
 }
@@ -535,24 +537,16 @@ func (p *pMatcher) matchRegex(path string, next bool) (int, bool) {
 }
 
 func paramMatcher(pname, ptype string) Matcher {
-	p := &pMatcher{ptype: ptype}
-	if IsRegexURLParam(ptype) {
-		if ptype[0] != '^' {
-			ptype = "^" + ptype
-		}
-		p.regex = regexp.MustCompile(ptype)
-	}
-	return p
+	return &pMatcher{ptype: ptype}
 }
 
-func IsRegexURLParam(ptype string) bool {
-	if _, ok := ptypes[ptype]; ok {
-		return false
+func regexMatcher(pname, ptype string) Matcher {
+	p := &pMatcher{ptype: ptype}
+	if ptype[0] != '^' {
+		ptype = "^" + ptype
 	}
-	if _, ok := matchers[ptype]; ok {
-		return false
-	}
-	return true
+	p.regex = regexp.MustCompile(ptype)
+	return p
 }
 
 func RegisterURLParam(ptype string, matcher func(string, string) Matcher) {

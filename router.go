@@ -13,7 +13,6 @@ type (
 		end   int
 		name  string
 	}
-
 	Route struct {
 		group    *Group
 		pnames   []Param
@@ -62,6 +61,10 @@ func (r *Router) Find(host, method, path string, c *context) (*Route, bool) {
 
 func newRouter() *Router {
 	return &Router{hosts: make(map[string]*node), routes: make(map[string]*Route)}
+}
+
+func (r *Route) Engine() *Engine {
+	return r.group.engine
 }
 
 func (r *Route) Logger() Logger {

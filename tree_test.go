@@ -17,8 +17,8 @@ func TestTree(t *testing.T) {
 	urls := []string{
 		"/path",
 		"/path/test",
-		"/path/{var1}",
 		"/path/{var1:int}",
+		"/path/{var1}",
 		"/path/{var1:int}-{var2:int}",
 		"/path/{var1}/{var2:int}",
 		"/path/{var1:[0-9]+}/regex",

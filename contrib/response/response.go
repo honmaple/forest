@@ -2,7 +2,6 @@ package response
 
 import (
 	"net/http"
-	"sync"
 
 	"github.com/honmaple/forest"
 )
@@ -39,18 +38,10 @@ type ListResponse struct {
 	List interface{} `json:"list,omitempty"`
 }
 
-var respPool = sync.Pool{
-	New: func() interface{} {
-		return &Response{
-			Code:    http.StatusOK,
-			Message: http.StatusText(http.StatusOK),
-		}
-	},
-}
-
 func New(code int, data ...interface{}) *Response {
-	resp := respPool.Get().(*Response)
-	resp.Code = code
+	resp := &Response{
+		Code: code,
+	}
 
 	if len(data) == 0 {
 		resp.Message = http.StatusText(code)

@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	r := forest.New()
+	r := forest.New(forest.Debug())
 	r.Use(middleware.Recover())
 	r.Use(middleware.Logger())
 	r.GET("/", func(c forest.Context) error {
@@ -25,7 +25,7 @@ func main() {
 		})
 	}
 
-	v2 := r.Host("v2.localhost:8000", "/v2")
+	v2 := r.Host("v2.localhost:8000", "")
 	{
 		v2.GET("/posts/{title:^test-\\w+}", func(c forest.Context) error {
 			return c.JSON(http.StatusOK, forest.H{"title": c.Param("title")})
@@ -33,9 +33,9 @@ func main() {
 	}
 
 	v3 := newGroup()
-	r.Mount("/v3", v3)
+	r.MountGroup("/v3", v3)
 
-	r.Run("127.0.0.1:8000")
+	r.Start("127.0.0.1:8000")
 }
 
 func newGroup() *forest.Group {

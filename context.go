@@ -3,12 +3,13 @@ package forest
 import (
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/honmaple/forest/binder"
 	"github.com/honmaple/forest/render"
-	"os"
-	"path/filepath"
 )
 
 type H map[string]interface{}
@@ -36,6 +37,7 @@ type Context interface {
 	JSON(int, interface{}) error
 	JSONP(int, string, interface{}) error
 	HTML(int, string) error
+	Bytes(int, []byte) error
 	String(int, string, ...interface{}) error
 	Blob(int, string, []byte) error
 	Render(int, string, interface{}) error
@@ -43,7 +45,7 @@ type Context interface {
 	File(string) error
 
 	Status(int) error
-	Redirect(int, string) error
+	Redirect(int, string, ...interface{}) error
 }
 
 type context struct {
@@ -158,6 +160,10 @@ func (c *context) JSONP(code int, callback string, data interface{}) error {
 	return render.JSONP(c.response, code, callback, data)
 }
 
+func (c *context) Bytes(code int, data []byte) error {
+	return render.Bytes(c.response, code, data)
+}
+
 func (c *context) String(code int, format string, args ...interface{}) error {
 	return render.Text(c.response, code, sprintf(format, args...))
 }
@@ -171,9 +177,12 @@ func (c *context) Status(code int) error {
 	return nil
 }
 
-func (c *context) Redirect(code int, url string) error {
+func (c *context) Redirect(code int, url string, args ...interface{}) error {
 	if code < 300 || code > 308 {
 		return nil
+	}
+	if !strings.HasPrefix(url, "/") && !strings.Contains(url, "://") {
+		url = c.route.Engine().URL(url, args...)
 	}
 	c.response.Header().Set("Location", url)
 	c.response.WriteHeader(code)
@@ -241,7 +250,7 @@ func (c *context) reset(r *http.Request, w http.ResponseWriter) {
 	c.index = -1
 }
 
-func NewContext(r *http.Request, w http.ResponseWriter) Context {
+func NewContext(r *http.Request, w http.ResponseWriter) *context {
 	c := &context{response: NewResponse(w)}
 	c.reset(r, w)
 	return c

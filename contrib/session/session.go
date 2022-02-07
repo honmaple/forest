@@ -12,12 +12,12 @@ import (
 const sessionName = "_session"
 
 type session struct {
-	name    string
-	store   sessions.Store
-	session *sessions.Session
-	request *http.Request
-	writer  http.ResponseWriter
-	written bool
+	name     string
+	store    sessions.Store
+	session  *sessions.Session
+	request  *http.Request
+	response http.ResponseWriter
+	written  bool
 }
 
 func (s *session) Get(key interface{}) interface{} {
@@ -54,7 +54,7 @@ func (s *session) Flashes(vars ...string) []interface{} {
 
 func (s *session) Save() error {
 	if s.Written() {
-		e := s.Session().Save(s.request, s.writer)
+		e := s.Session().Save(s.request, s.response)
 		if e == nil {
 			s.written = false
 		}
@@ -84,6 +84,13 @@ func (s *session) Written() bool {
 	return s.written
 }
 
+func (s *session) reset(r *http.Request, w http.ResponseWriter) {
+	s.request = r
+	s.response = w
+	s.session = nil
+	s.written = false
+}
+
 func Session(c forest.Context) *session {
 	s := c.Get(sessionName)
 	if s == nil {
@@ -100,8 +107,7 @@ func Middleware(name string, store sessions.Store) forest.HandlerFunc {
 	}
 	return func(c forest.Context) error {
 		s := sessionPool.Get().(*session)
-		s.request = c.Request()
-		s.writer = c.Response()
+		s.reset(c.Request(), c.Response())
 		defer sessionPool.Put(s)
 
 		c.Set(sessionName, s)

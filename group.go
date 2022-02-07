@@ -57,7 +57,7 @@ func (g *Group) Host(host string, prefix string, middlewares ...HandlerFunc) *Gr
 }
 
 func (g *Group) Group(prefix string, middlewares ...HandlerFunc) *Group {
-	return g.Host("", prefix, middlewares...)
+	return g.Host(g.host, prefix, middlewares...)
 }
 
 func (g *Group) Use(middlewares ...HandlerFunc) *Group {
@@ -185,18 +185,26 @@ func (g *Group) StaticFS(path string, fs http.FileSystem, middlewares ...Handler
 
 func (g *Group) Mount(prefix string, child *Group) {
 	if g.engine == child.engine {
-		return
+		panic("forest: can't mount with same engine")
+	}
+	if child.host == "" {
+		child.host = g.host
 	}
 	child.parent = g
 	child.prefix = g.prefix + prefix + child.prefix
-	child.engine = g.engine
 	child.middlewares = mergeHandlers(g.middlewares, child.middlewares)
 	g.children = append(g.children, child)
 	g.engine.Mount(prefix, child.engine)
+	child.engine = g.engine
 }
 
-func NewGroup() *Group {
-	e := New()
-	e.Debug = false
+func NewHost(host string, opts ...Option) *Group {
+	e := New(opts...)
+	e.host = host
+	return e.rootGroup
+}
+
+func NewGroup(opts ...Option) *Group {
+	e := New(opts...)
 	return e.rootGroup
 }

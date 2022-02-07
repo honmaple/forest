@@ -15,11 +15,11 @@ type (
 	Engine    struct {
 		*rootGroup
 		mu                    sync.Mutex
-		pool                  sync.Pool
+		contextPool           sync.Pool
 		router                *Router
 		notFoundRoute         *Route
 		methodNotAllowedRoute *Route
-		Debug                 bool
+		debug                 bool
 		Server                *http.Server
 	}
 	HandlerFunc      func(Context) error
@@ -31,11 +31,14 @@ var (
 	ErrMethodNotAllowed    = NewError(http.StatusMethodNotAllowed)
 	ErrInternalServerError = NewError(http.StatusInternalServerError)
 
+	NotFoundMessage         = []byte(ErrNotFound.Error())
+	MethodNotAllowedMessage = []byte(ErrMethodNotAllowed.Error())
+
 	NotFoundHandler = func(c Context) error {
-		return ErrNotFound
+		return c.Bytes(http.StatusNotFound, NotFoundMessage)
 	}
 	MethodNotAllowedHandler = func(c Context) error {
-		return ErrMethodNotAllowed
+		return c.Bytes(http.StatusMethodNotAllowed, MethodNotAllowedMessage)
 	}
 	ErrorHandler = func(err error, c Context) {
 		if err == nil {
@@ -77,35 +80,62 @@ func debugPrint(msg string, args ...interface{}) {
 	fmt.Fprint(os.Stdout, sprintf(msg, args...))
 }
 
-func New() *Engine {
+type Option func(e *Engine)
+
+func Debug() Option {
+	return func(e *Engine) {
+		e.debug = true
+	}
+}
+
+func New(opts ...Option) *Engine {
 	e := &Engine{
-		pool: sync.Pool{
-			New: func() interface{} {
-				return NewContext(nil, nil)
-			},
-		},
 		router: newRouter(),
 	}
 	e.rootGroup = &Group{
 		engine:      e,
 		middlewares: make([]HandlerFunc, 0),
 	}
-	e.Debug = true
+	e.contextPool = sync.Pool{
+		New: func() interface{} {
+			return NewContext(nil, nil)
+		},
+	}
 	e.Logger = newLogger()
 	e.ErrorHandler = ErrorHandler
 	e.NotFound(NotFoundHandler)
 	e.MethodNotAllowed(MethodNotAllowedHandler)
+	for _, opt := range opts {
+		opt(e)
+	}
 	return e
 }
 
-func NewHost(host string) *Engine {
-	e := New()
-	e.host = host
-	return e
+func WrapHandler(h http.Handler) HandlerFunc {
+	return func(c Context) error {
+		h.ServeHTTP(c.Response(), c.Request())
+		return nil
+	}
 }
 
 func (e *Engine) addRoute(route *Route) {
 	e.router.Insert(route)
+}
+
+func (e *Engine) URL(name string, args ...interface{}) string {
+	if r := e.Route(name); r != nil {
+		return r.URL(args...)
+	}
+	return ""
+}
+
+func (e *Engine) Route(name string) *Route {
+	for _, r := range e.router.routes {
+		if r.Name == name {
+			return r
+		}
+	}
+	return nil
 }
 
 func (e *Engine) Router() *Router {
@@ -120,15 +150,6 @@ func (e *Engine) Routes() []*Route {
 	return routes
 }
 
-func (e *Engine) URL(name string, args ...interface{}) string {
-	for _, r := range e.router.routes {
-		if r.Name == name {
-			return r.URL(args...)
-		}
-	}
-	return ""
-}
-
 func (e *Engine) Use(middlewares ...HandlerFunc) *Engine {
 	e.rootGroup.Use(middlewares...)
 	e.notFoundRoute.Handlers = append(e.middlewares, e.notFoundRoute.Last())
@@ -138,6 +159,7 @@ func (e *Engine) Use(middlewares ...HandlerFunc) *Engine {
 
 func (e *Engine) Mount(prefix string, child *Engine) {
 	for _, r := range child.Routes() {
+		r.Host = child.host
 		r.Path = prefix + r.Path
 		r.Handlers = append(e.middlewares, r.Handlers...)
 		e.addRoute(r)
@@ -171,10 +193,10 @@ func (e *Engine) MethodNotAllowed(h HandlerFunc) {
 	e.methodNotAllowedRoute.Handlers[len(e.methodNotAllowedRoute.Handlers)-1] = h
 }
 
-func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	c := e.pool.Get().(*context)
+func (e *Engine) Context(w http.ResponseWriter, r *http.Request) *context {
+	c := e.contextPool.Get().(*context)
 	c.reset(r, w)
-	defer e.pool.Put(c)
+	defer e.contextPool.Put(c)
 
 	// path := r.URL.EscapedPath()
 	// if path == "" {
@@ -193,11 +215,17 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		c.route = e.notFoundRoute
 	}
-	c.Next()
+	return c
+}
+
+func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	e.Context(w, r).Next()
 }
 
 func (e *Engine) configure(addr string) error {
-	if e.Debug {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.debug {
 		for _, r := range e.router.routes {
 			debugPrint(r.String())
 		}
@@ -211,16 +239,12 @@ func (e *Engine) configure(addr string) error {
 }
 
 func (e *Engine) Start(addr string) error {
-	e.mu.Lock()
 	e.configure(addr)
-	e.mu.Unlock()
 	return e.Server.ListenAndServe()
 }
 
 func (e *Engine) StartTLS(addr string, certFile, keyFile string) error {
-	e.mu.Lock()
 	e.configure(addr)
-	e.mu.Unlock()
 	return e.Server.ListenAndServeTLS(certFile, keyFile)
 }
 
