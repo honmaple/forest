@@ -31,21 +31,34 @@ func TestGroup(t *testing.T) {
 	assert.Len(t, group2.middlewares, 4)
 	assert.Equal(t, "/1/2", group2.prefix)
 	assert.Equal(t, router, group2.engine)
+}
 
-	group3 := NewGroup()
-	group3.Use(h, h, h)
-	assert.Len(t, group3.middlewares, 3)
+func TestGroupMount(t *testing.T) {
+	r := New()
+	g := r.Group("/group")
 
-	group.Mount("/3", group3)
-	assert.Len(t, group.middlewares, 2)
-	assert.Equal(t, "/1/3", group3.prefix)
-	assert.Len(t, group3.middlewares, 5)
-	assert.Equal(t, router, group3.engine)
+	group := NewGroup()
+	group.GET("/2", func(c Context) error { return c.Status(200) })
+	group.GET("/{var}", func(c Context) error { return c.String(201, c.Param("var")) })
+
+	g.Mount("/1", group)
+
+	c, _ := testRequest(http.MethodGet, "/group/1/2", r)
+	assert.Equal(t, 200, c)
+
+	c, b := testRequest(http.MethodGet, "/group/1/ss", r)
+	assert.Equal(t, 201, c)
+	assert.Equal(t, "ss", b)
+
+	r.MountGroup("/3", group)
+	c, b = testRequest(http.MethodGet, "/3/ss", r)
+	assert.Equal(t, 201, c)
+	assert.Equal(t, "ss", b)
 }
 
 func TestGroupMiddleware(t *testing.T) {
-	e := New()
-	g := e.Group("/group")
+	r := New()
+	g := r.Group("/group")
 	h := func(c Context) error { return c.Status(200) }
 	m1 := func(c Context) error {
 		return c.Next()
@@ -67,11 +80,11 @@ func TestGroupMiddleware(t *testing.T) {
 	g.GET("/404", h, m4)
 	g.GET("/405", h, m5)
 
-	c, _ := testRequest(http.MethodGet, "/group/200", e)
+	c, _ := testRequest(http.MethodGet, "/group/200", r)
 	assert.Equal(t, 200, c)
-	c, _ = testRequest(http.MethodGet, "/group/404", e)
+	c, _ = testRequest(http.MethodGet, "/group/404", r)
 	assert.Equal(t, 404, c)
-	c, _ = testRequest(http.MethodGet, "/group/405", e)
+	c, _ = testRequest(http.MethodGet, "/group/405", r)
 	assert.Equal(t, 405, c)
 }
 

@@ -46,7 +46,7 @@ func (r *Router) Insert(route *Route) {
 	}
 	root.insert(route)
 
-	key := route.Method + route.Path
+	key := route.Host + route.Method + route.Path
 	if _, ok := r.routes[key]; !ok {
 		r.routes[key] = route
 	}

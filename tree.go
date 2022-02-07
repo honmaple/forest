@@ -8,23 +8,10 @@ import (
 	"unicode"
 )
 
-const (
-	pathChar   = '*'
-	paramChar  = ':'
-	slashChar  = '/'
-	escapeChar = '\\'
-)
-
-const (
-	skind uint8 = iota // static path
-	pkind              // path with params
-	rkind              // path with regexp
-	akind              // path with anything
-)
-
 type (
+	kind uint8
 	node struct {
-		kind     uint8
+		kind     kind
 		prefix   string
 		routes   Routes
 		matcher  Matcher
@@ -32,6 +19,13 @@ type (
 		hasNext  bool
 	}
 	nodes []*node
+)
+
+const (
+	skind kind = iota // static path
+	pkind             // path with params
+	rkind             // path with regexp
+	akind             // path with anything
 )
 
 func (ns nodes) Sort()         { sort.Sort(ns) }
@@ -134,8 +128,8 @@ func (s *node) insertStatic(path string, route *Route) *node {
 
 func (s *node) insertParam(pname, ptype string, route *Route) *node {
 	var (
-		kind    uint8 = pkind
-		label   byte  = ':'
+		nkind   kind = pkind
+		label   byte = ':'
 		matcher Matcher
 	)
 	mc, ok := matchers[ptype]
@@ -146,15 +140,15 @@ func (s *node) insertParam(pname, ptype string, route *Route) *node {
 	}
 
 	if ptype == "path" {
-		kind = akind
+		nkind = akind
 		label = '*'
 	} else if !ok {
-		kind = rkind
+		nkind = rkind
 	}
 
-	child := s.findParamChild(kind, ptype, label)
+	child := s.findParamChild(nkind, ptype, label)
 	if child == nil {
-		child = newNode(kind, string(label), route)
+		child = newNode(nkind, string(label), route)
 		child.matcher = matcher
 		s.addChild(child)
 	}
@@ -278,7 +272,7 @@ func (s *node) addChild(child *node) {
 	s.hasNext = true
 }
 
-func (s *node) findParamChild(kind uint8, ptype string, l byte) *node {
+func (s *node) findParamChild(kind kind, ptype string, l byte) *node {
 	for _, child := range s.children[kind] {
 		if child.prefix[0] == l {
 			if child.matcher == nil || child.matcher.Name() == ptype {
@@ -320,8 +314,8 @@ func (s *node) matchChild(path string, c *context) *node {
 	if !s.hasNext {
 		return nil
 	}
-	for kind := range s.children {
-		switch uint8(kind) {
+	for k := range s.children {
+		switch kind(k) {
 		case skind:
 			child := s.findStaticChild(path[0])
 			if child == nil {
@@ -331,7 +325,7 @@ func (s *node) matchChild(path string, c *context) *node {
 				return t
 			}
 		default:
-			for _, child := range s.children[kind] {
+			for _, child := range s.children[k] {
 				if t := child.match(path, c); t != nil {
 					return t
 				}
@@ -405,7 +399,7 @@ func (s *node) Print(l int) {
 	}
 }
 
-func newNode(kind uint8, prefix string, route *Route) *node {
+func newNode(kind kind, prefix string, route *Route) *node {
 	n := &node{
 		kind:   kind,
 		prefix: prefix,

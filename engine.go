@@ -122,6 +122,20 @@ func (e *Engine) addRoute(route *Route) {
 	e.router.Insert(route)
 }
 
+func (e *Engine) rebuild(route *Route) {
+	rlen := len(route.Handlers)
+	if rlen > 1 {
+		rlen = 1
+	}
+	handlers := make([]HandlerFunc, len(e.middlewares)+rlen)
+	copy(handlers, e.middlewares)
+
+	if rlen > 0 {
+		handlers[len(e.middlewares)] = route.Last()
+	}
+	route.Handlers = handlers
+}
+
 func (e *Engine) URL(name string, args ...interface{}) string {
 	if r := e.Route(name); r != nil {
 		return r.URL(args...)
@@ -152,45 +166,35 @@ func (e *Engine) Routes() []*Route {
 
 func (e *Engine) Use(middlewares ...HandlerFunc) *Engine {
 	e.rootGroup.Use(middlewares...)
-	e.notFoundRoute.Handlers = append(e.middlewares, e.notFoundRoute.Last())
-	e.methodNotAllowedRoute.Handlers = append(e.middlewares, e.methodNotAllowedRoute.Last())
+	e.rebuild(e.notFoundRoute)
+	e.rebuild(e.methodNotAllowedRoute)
 	return e
 }
 
 func (e *Engine) Mount(prefix string, child *Engine) {
-	for _, r := range child.Routes() {
-		r.Host = child.host
-		r.Path = prefix + r.Path
-		r.Handlers = append(e.middlewares, r.Handlers...)
-		e.addRoute(r)
-	}
-	if child.Logger == nil {
-		child.Logger = e.Logger
-	}
-	if child.Renderer == nil {
-		child.Renderer = e.Renderer
-	}
-	if child.ErrorHandler == nil {
-		child.ErrorHandler = e.ErrorHandler
-	}
+	e.rootGroup.Mount(prefix, child.rootGroup)
 }
 
 func (e *Engine) MountGroup(prefix string, child *Group) {
 	e.rootGroup.Mount(prefix, child)
 }
 
-func (e *Engine) NotFound(h HandlerFunc) {
+func (e *Engine) NotFound(h HandlerFunc) *Route {
 	if e.notFoundRoute == nil {
 		e.notFoundRoute = &Route{Handlers: make([]HandlerFunc, 1), group: e.rootGroup}
 	}
+	e.notFoundRoute.Name = handlerName(h)
 	e.notFoundRoute.Handlers[len(e.notFoundRoute.Handlers)-1] = h
+	return e.notFoundRoute
 }
 
-func (e *Engine) MethodNotAllowed(h HandlerFunc) {
+func (e *Engine) MethodNotAllowed(h HandlerFunc) *Route {
 	if e.methodNotAllowedRoute == nil {
 		e.methodNotAllowedRoute = &Route{Handlers: make([]HandlerFunc, 1), group: e.rootGroup}
 	}
+	e.methodNotAllowedRoute.Name = handlerName(h)
 	e.methodNotAllowedRoute.Handlers[len(e.methodNotAllowedRoute.Handlers)-1] = h
+	return e.methodNotAllowedRoute
 }
 
 func (e *Engine) Context(w http.ResponseWriter, r *http.Request) *context {
@@ -198,10 +202,6 @@ func (e *Engine) Context(w http.ResponseWriter, r *http.Request) *context {
 	c.reset(r, w)
 	defer e.contextPool.Put(c)
 
-	// path := r.URL.EscapedPath()
-	// if path == "" {
-	//	path = "/"
-	// }
 	path := r.URL.RawPath
 	if path == "" {
 		path = r.URL.Path

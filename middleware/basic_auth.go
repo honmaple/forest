@@ -24,8 +24,8 @@ var (
 	}
 )
 
-func BasicAuth() forest.HandlerFunc {
-	return BasicAuthWithConfig(DefaultBasicAuthConfig)
+func BasicAuth(valid func(string, string) bool) forest.HandlerFunc {
+	return BasicAuthWithConfig(BasicAuthConfig{Validator: valid})
 }
 
 func BasicAuthWithConfig(config BasicAuthConfig) forest.HandlerFunc {

@@ -187,15 +187,23 @@ func (g *Group) Mount(prefix string, child *Group) {
 	if g.engine == child.engine {
 		panic("forest: can't mount with same engine")
 	}
-	if child.host == "" {
-		child.host = g.host
-	}
-	child.parent = g
-	child.prefix = g.prefix + prefix + child.prefix
-	child.middlewares = mergeHandlers(g.middlewares, child.middlewares)
 	g.children = append(g.children, child)
-	g.engine.Mount(prefix, child.engine)
-	child.engine = g.engine
+
+	host := child.host
+	if host == "" || g.host != "" {
+		host = g.host
+	}
+	for _, r := range child.engine.Routes() {
+		route := &Route{
+			group:    r.group,
+			Host:     host,
+			Name:     r.Name,
+			Path:     g.prefix + prefix + r.Path,
+			Method:   r.Method,
+			Handlers: mergeHandlers(g.middlewares, r.Handlers),
+		}
+		g.engine.addRoute(route)
+	}
 }
 
 func NewHost(host string, opts ...Option) *Group {
