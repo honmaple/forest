@@ -99,6 +99,20 @@
       router.GET("/posts/{var:path}/{var1:int}/{var2:path}", handler)
     #+end_src
 
+*** Named Route
+    #+begin_src go
+      r := forest.New()
+      v1 := r.Group("/v1").Named("v1")
+      api := v1.Group("/api").Named("api")
+      r1 := api.GET("/posts").Named("list_posts")
+      r2 := api.DELETE("/posts/:pk").Named("delete_post")
+      // result
+      r.Route("v1.api.list_posts") == r1
+      r.URL("v1.api.list_posts") == r1.URL() == "/v1/api/posts"
+      r.Route("v1.api.delete_post") == r2
+      r.URL("v1.api.delete_post", "12") == r2.URL("12") == "/v1/api/posts/12"
+    #+end_src
+
 ** Custom
 *** Custom Middleware
     #+begin_src go

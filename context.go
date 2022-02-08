@@ -44,6 +44,7 @@ type Context interface {
 	RenderWith(int, render.Renderer) error
 	File(string) error
 
+	URL(string, ...interface{}) string
 	Status(int) error
 	Redirect(int, string, ...interface{}) error
 }
@@ -175,6 +176,10 @@ func (c *context) HTML(code int, data string) error {
 func (c *context) Status(code int) error {
 	c.response.WriteHeader(code)
 	return nil
+}
+
+func (c *context) URL(name string, args ...interface{}) string {
+	return c.route.Engine().URL(name, args...)
 }
 
 func (c *context) Redirect(code int, url string, args ...interface{}) error {

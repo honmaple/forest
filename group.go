@@ -1,6 +1,7 @@
 package forest
 
 import (
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"regexp"
@@ -38,6 +39,15 @@ var methods = [...]string{
 	http.MethodTrace,
 }
 
+func (g *Group) Named(name string) *Group {
+	prefix := ""
+	if g.parent != nil && g.parent.Name != "" {
+		prefix = g.parent.Name + "."
+	}
+	g.Name = prefix + name
+	return g
+}
+
 func (g *Group) Host(host string, prefix string, middlewares ...HandlerFunc) *Group {
 	n := &Group{
 		host:         host,
@@ -48,6 +58,9 @@ func (g *Group) Host(host string, prefix string, middlewares ...HandlerFunc) *Gr
 		Logger:       g.Logger,
 		Renderer:     g.Renderer,
 		ErrorHandler: g.ErrorHandler,
+	}
+	if g.Name != "" {
+		n.Name = fmt.Sprintf("%s.%d", g.Name, len(g.children))
 	}
 	if g.children == nil {
 		g.children = make([]*Group, 0)

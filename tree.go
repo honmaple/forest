@@ -128,17 +128,10 @@ func (s *node) insertStatic(path string, route *Route) *node {
 
 func (s *node) insertParam(pname, ptype string, route *Route) *node {
 	var (
-		nkind   kind = pkind
-		label   byte = ':'
-		matcher Matcher
+		nkind kind = pkind
+		label byte = ':'
 	)
 	mc, ok := matchers[ptype]
-	if ok {
-		matcher = mc(pname, ptype)
-	} else {
-		matcher = regexMatcher(pname, ptype)
-	}
-
 	if ptype == "path" {
 		nkind = akind
 		label = '*'
@@ -149,7 +142,11 @@ func (s *node) insertParam(pname, ptype string, route *Route) *node {
 	child := s.findParamChild(nkind, ptype, label)
 	if child == nil {
 		child = newNode(nkind, string(label), route)
-		child.matcher = matcher
+		if ok {
+			child.matcher = mc(pname, ptype)
+		} else {
+			child.matcher = regexMatcher(pname, ptype)
+		}
 		s.addChild(child)
 	}
 	return child

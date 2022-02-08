@@ -174,14 +174,32 @@ func TestGroupRouteName(t *testing.T) {
 	router := New()
 	group := router.Group("/group")
 	group.Name = "group"
-	group.GET("/1", func(Context) error { return nil }).Name = "handler1"
-	group.GET("/2", func(Context) error { return nil }).Name = "handler2"
-	group.GET("/3/:var", func(Context) error { return nil }).Name = "handler3"
-	group.GET("/4/:var1/1/:var2", func(Context) error { return nil }).Name = "handler4"
+	h := func(Context) error { return nil }
+	group.GET("/1", h).Name = "handler1"
+	group.GET("/2", h).Name = "handler2"
+	group.GET("/3/:var", h).Name = "handler3"
+	group.GET("/4/:var1/1/:var2", h).Name = "handler4"
 
 	assert.Equal(t, router.URL("handler1"), "/group/1")
 	assert.Equal(t, router.URL("handler2"), "/group/2")
 	assert.Equal(t, router.URL("handler3", "var1"), "/group/3/var1")
 	assert.Equal(t, router.URL("handler4", "var1"), "/group/4/var1/1/:var2")
 	assert.Equal(t, router.URL("handler4", "var1", "var2"), "/group/4/var1/1/var2")
+
+	v1 := router.Group("/v1").Named("v1")
+	r1 := v1.GET("/1", h).Named("r1")
+	r2 := v1.GET("/2", h).Named("r2")
+	assert.Equal(t, router.Route("v1.r1"), r1)
+	assert.Equal(t, router.Route("v1.r2"), r2)
+
+	v2 := v1.Group("/v2").Named("v2")
+	r3 := v2.GET("/3", h).Named("r3")
+	assert.Equal(t, router.Route("v1.v2.r3"), r3)
+
+	v3 := router.Group("/v3")
+	v4 := v3.Group("/v4").Named("v4")
+	r4 := v4.GET("/4", h).Named("r4")
+	assert.Equal(t, router.Route("v4.r4"), r4)
+	r4.Name = "r4.1"
+	assert.Equal(t, router.Route("r4.1"), r4)
 }

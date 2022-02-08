@@ -17,6 +17,7 @@ type (
 		group    *Group
 		pnames   []Param
 		Name     string        `json:"name"`
+		Desc     string        `json:"desc"`
 		Host     string        `json:"host"`
 		Path     string        `json:"path"`
 		Method   string        `json:"method"`
@@ -61,6 +62,18 @@ func (r *Router) Find(host, method, path string, c *context) (*Route, bool) {
 
 func newRouter() *Router {
 	return &Router{hosts: make(map[string]*node), routes: make(map[string]*Route)}
+}
+
+func (r *Route) Named(name string, desc ...string) *Route {
+	prefix := ""
+	if r.group.Name != "" {
+		prefix = r.group.Name + "."
+	}
+	r.Name = prefix + name
+	if len(desc) > 0 {
+		r.Desc = desc[0]
+	}
+	return r
 }
 
 func (r *Route) Engine() *Engine {
