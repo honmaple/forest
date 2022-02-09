@@ -54,8 +54,10 @@ func (r *Router) Insert(route *Route) {
 }
 
 func (r *Router) Find(host, method, path string, c *context) (*Route, bool) {
-	if root, ok := r.hosts[host]; ok {
-		return root.search(method, path, c)
+	if host != "" {
+		if root, ok := r.hosts[host]; ok {
+			return root.search(method, path, c)
+		}
 	}
 	return r.hosts[""].search(method, path, c)
 }

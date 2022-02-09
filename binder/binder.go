@@ -108,3 +108,10 @@ func Bind(req *http.Request, dst interface{}) (err error) {
 	}
 	return errors.New("unknown content type: " + ctype)
 }
+
+func ParseForm(req *http.Request, maxmem int64) error {
+	if maxmem == 0 {
+		maxmem = defaultMemory
+	}
+	return req.ParseMultipartForm(maxmem)
+}

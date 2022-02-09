@@ -148,6 +148,8 @@ func (s *node) insertParam(pname, ptype string, route *Route) *node {
 			child.matcher = regexMatcher(pname, ptype)
 		}
 		s.addChild(child)
+	} else {
+		child.addRoute(route)
 	}
 	return child
 }
@@ -282,50 +284,49 @@ func (s *node) findParamChild(kind kind, ptype string, l byte) *node {
 
 func (s *node) findStaticChild(l byte) *node {
 	children := s.children[skind]
-	num := len(children)
-	if num == 0 {
+	childlen := len(children)
+	if childlen == 0 {
 		return nil
 	}
-	idx := 0
-	i, j := 0, num-1
+	var (
+		index int
+		label byte
+	)
+	i, j := 0, childlen-1
 	for i <= j {
-		idx = i + (j-i)/2
-		if l > children[idx].prefix[0] {
-			i = idx + 1
-		} else if l < children[idx].prefix[0] {
-			j = idx - 1
+		index = i + (j-i)/2
+		label = children[index].prefix[0]
+		if l > label {
+			i = index + 1
+		} else if l < label {
+			j = index - 1
 		} else {
-			i = num
+			i = childlen
 		}
 	}
-	if children[idx].prefix[0] != l {
+	if label != l {
 		return nil
 	}
-	return children[idx]
+	return children[index]
 }
 
 func (s *node) matchChild(path string, c *context) *node {
-	if path == "" {
+	if len(path) == 0 {
 		return s
 	}
 	if !s.hasNext {
 		return nil
 	}
-	for k := range s.children {
-		switch kind(k) {
-		case skind:
-			child := s.findStaticChild(path[0])
-			if child == nil {
-				continue
-			}
+
+	if child := s.findStaticChild(path[0]); child != nil {
+		if t := child.match(path, c); t != nil {
+			return t
+		}
+	}
+	for i := 1; i < len(s.children); i++ {
+		for _, child := range s.children[i] {
 			if t := child.match(path, c); t != nil {
 				return t
-			}
-		default:
-			for _, child := range s.children[k] {
-				if t := child.match(path, c); t != nil {
-					return t
-				}
 			}
 		}
 	}
@@ -333,8 +334,7 @@ func (s *node) matchChild(path string, c *context) *node {
 }
 
 func (s *node) match(path string, c *context) *node {
-	switch s.kind {
-	case skind:
+	if s.kind == skind {
 		if !strings.HasPrefix(path, s.prefix) {
 			return nil
 		}
@@ -343,30 +343,28 @@ func (s *node) match(path string, c *context) *node {
 			return s
 		}
 		return s.matchChild(path[pl:], c)
-	case pkind, rkind, akind:
-		i := 0
-		for i < len(path) {
-			e, loop := s.matcher.Match(path[i:], s.hasNext)
-			if e == -1 {
-				return nil
-			}
-			c.pvalues = append(c.pvalues, path[:i+e])
-			if e == len(path[i:]) {
-				return s
-			}
-			if child := s.matchChild(path[i+e:], c); child != nil {
-				return child
-			}
-			c.pvalues = c.pvalues[:len(c.pvalues)-1]
-			if !loop {
-				break
-			}
-			i = i + e
-		}
-		return nil
-	default:
-		return nil
 	}
+
+	i := 0
+	for i < len(path) {
+		e, loop := s.matcher.Match(path[i:], s.hasNext)
+		if e == -1 {
+			return nil
+		}
+		c.pvalues = append(c.pvalues, path[:i+e])
+		if e == len(path[i:]) {
+			return s
+		}
+		if child := s.matchChild(path[i+e:], c); child != nil {
+			return child
+		}
+		c.pvalues = c.pvalues[:len(c.pvalues)-1]
+		if !loop {
+			break
+		}
+		i = i + e
+	}
+	return nil
 }
 
 func (s *node) search(method, path string, c *context) (*Route, bool) {

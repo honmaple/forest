@@ -28,6 +28,16 @@ type Context interface {
 	Param(string) string
 	Params() map[string]string
 
+	FormParam(string) string
+	FormParams() (url.Values, error)
+
+	QueryParam(string) string
+	QueryParams() url.Values
+
+	Cookie(string) (*http.Cookie, error)
+	Cookies() []*http.Cookie
+	SetCookie(*http.Cookie)
+
 	Bind(interface{}) error
 	BindWith(interface{}, binder.Binder) error
 	BindParams(interface{}) error
@@ -42,7 +52,9 @@ type Context interface {
 	Blob(int, string, []byte) error
 	Render(int, string, interface{}) error
 	RenderWith(int, render.Renderer) error
+
 	File(string) error
+	FileFromFS(string, http.FileSystem) error
 
 	URL(string, ...interface{}) string
 	Status(int) error
@@ -100,12 +112,15 @@ func (c *context) Params() map[string]string {
 	return params
 }
 
-func (c *context) FormValue(key string) string {
+func (c *context) FormParam(key string) string {
 	return c.request.FormValue(key)
 }
 
 func (c *context) FormParams() (url.Values, error) {
-	return nil, nil
+	if err := binder.ParseForm(c.request, 0); err != nil {
+		return nil, err
+	}
+	return c.request.Form, nil
 }
 
 func (c *context) QueryParam(key string) string {
@@ -117,6 +132,18 @@ func (c *context) QueryParams() url.Values {
 		c.query = c.request.URL.Query()
 	}
 	return c.query
+}
+
+func (c *context) Cookie(name string) (*http.Cookie, error) {
+	return c.request.Cookie(name)
+}
+
+func (c *context) Cookies() []*http.Cookie {
+	return c.request.Cookies()
+}
+
+func (c *context) SetCookie(cookie *http.Cookie) {
+	http.SetCookie(c.response, cookie)
 }
 
 func (c *context) Bind(data interface{}) error {

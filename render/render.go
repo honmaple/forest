@@ -18,6 +18,7 @@ const (
 	ContentTypeJSONCharsetUTF8  = ContentTypeJSON + "; " + charsetUTF8
 	ContentTypeJSONP            = "application/javascript"
 	ContentTypeJSONPCharsetUTF8 = ContentTypeJSONP + "; " + charsetUTF8
+	ContentTypeMultipartForm    = "multipart/form-data"
 )
 
 type Renderer interface {
