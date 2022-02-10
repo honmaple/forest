@@ -23,14 +23,14 @@ func TestGroup(t *testing.T) {
 
 	assert.Len(t, group.middlewares, 2)
 	assert.Equal(t, "/1", group.prefix)
-	assert.Equal(t, router, group.engine)
+	assert.Equal(t, router, group.forest)
 
 	group2 := group.Group("/2")
 	group2.Use(h, h)
 
 	assert.Len(t, group2.middlewares, 4)
 	assert.Equal(t, "/1/2", group2.prefix)
-	assert.Equal(t, router, group2.engine)
+	assert.Equal(t, router, group2.forest)
 }
 
 func TestGroupMount(t *testing.T) {

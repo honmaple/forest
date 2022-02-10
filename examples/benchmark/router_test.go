@@ -628,7 +628,7 @@ func BenchmarkGinParseAPI(b *testing.B) {
 	benchmarkRoutes(b, g, parseAPI)
 }
 
-func loadForestRoutes(e *forest.Engine, routes []*Route) {
+func loadForestRoutes(e *forest.Forest, routes []*Route) {
 	for _, r := range routes {
 		switch r.Method {
 		case "GET":

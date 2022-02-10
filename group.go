@@ -12,7 +12,7 @@ type (
 	Group struct {
 		host        string
 		prefix      string
-		engine      *Engine
+		forest      *Forest
 		parent      *Group
 		children    []*Group
 		middlewares []HandlerFunc
@@ -53,7 +53,7 @@ func (g *Group) Host(host string, prefix string, middlewares ...HandlerFunc) *Gr
 		host:         host,
 		prefix:       g.prefix + prefix,
 		parent:       g,
-		engine:       g.engine,
+		forest:       g.forest,
 		middlewares:  mergeHandlers(g.middlewares, middlewares),
 		Logger:       g.Logger,
 		Renderer:     g.Renderer,
@@ -91,7 +91,7 @@ func (g *Group) Add(method string, path string, handler HandlerFunc, middlewares
 	route.Name = handlerName(handler)
 	route.Handlers = append(mergeHandlers(g.middlewares, middlewares), handler)
 
-	g.engine.addRoute(route)
+	g.forest.addRoute(route)
 	return route
 }
 
@@ -197,8 +197,8 @@ func (g *Group) StaticFS(path string, fs http.FileSystem, middlewares ...Handler
 }
 
 func (g *Group) Mount(prefix string, child *Group) {
-	if g.engine == child.engine {
-		panic("forest: can't mount with same engine")
+	if g.forest == child.forest {
+		panic("forest: can't mount with same forest")
 	}
 	g.children = append(g.children, child)
 
@@ -206,7 +206,7 @@ func (g *Group) Mount(prefix string, child *Group) {
 	if host == "" || g.host != "" {
 		host = g.host
 	}
-	for _, r := range child.engine.Routes() {
+	for _, r := range child.forest.Routes() {
 		route := &Route{
 			group:    r.group,
 			Host:     host,
@@ -215,7 +215,7 @@ func (g *Group) Mount(prefix string, child *Group) {
 			Method:   r.Method,
 			Handlers: mergeHandlers(g.middlewares, r.Handlers),
 		}
-		g.engine.addRoute(route)
+		g.forest.addRoute(route)
 	}
 }
 

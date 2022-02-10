@@ -12,7 +12,7 @@ import (
 
 type (
 	rootGroup = Group
-	Engine    struct {
+	Forest    struct {
 		*rootGroup
 		mu                    sync.Mutex
 		contextPool           sync.Pool
@@ -80,20 +80,20 @@ func debugPrint(msg string, args ...interface{}) {
 	fmt.Fprint(os.Stdout, sprintf(msg, args...))
 }
 
-type Option func(e *Engine)
+type Option func(e *Forest)
 
 func Debug() Option {
-	return func(e *Engine) {
+	return func(e *Forest) {
 		e.debug = true
 	}
 }
 
-func New(opts ...Option) *Engine {
-	e := &Engine{
+func New(opts ...Option) *Forest {
+	e := &Forest{
 		router: newRouter(),
 	}
 	e.rootGroup = &Group{
-		engine:      e,
+		forest:      e,
 		middlewares: make([]HandlerFunc, 0),
 	}
 	e.contextPool = sync.Pool{
@@ -118,11 +118,11 @@ func WrapHandler(h http.Handler) HandlerFunc {
 	}
 }
 
-func (e *Engine) addRoute(route *Route) {
+func (e *Forest) addRoute(route *Route) {
 	e.router.Insert(route)
 }
 
-func (e *Engine) rebuild(route *Route) {
+func (e *Forest) rebuild(route *Route) {
 	rlen := len(route.Handlers)
 	if rlen > 1 {
 		rlen = 1
@@ -136,14 +136,14 @@ func (e *Engine) rebuild(route *Route) {
 	route.Handlers = handlers
 }
 
-func (e *Engine) URL(name string, args ...interface{}) string {
+func (e *Forest) URL(name string, args ...interface{}) string {
 	if r := e.Route(name); r != nil {
 		return r.URL(args...)
 	}
 	return ""
 }
 
-func (e *Engine) Route(name string) *Route {
+func (e *Forest) Route(name string) *Route {
 	for _, r := range e.router.routes {
 		if r.Name == name {
 			return r
@@ -152,11 +152,11 @@ func (e *Engine) Route(name string) *Route {
 	return nil
 }
 
-func (e *Engine) Router() *Router {
+func (e *Forest) Router() *Router {
 	return e.router
 }
 
-func (e *Engine) Routes() []*Route {
+func (e *Forest) Routes() []*Route {
 	routes := make([]*Route, 0, len(e.router.routes))
 	for _, r := range e.router.routes {
 		routes = append(routes, r)
@@ -164,22 +164,22 @@ func (e *Engine) Routes() []*Route {
 	return routes
 }
 
-func (e *Engine) Use(middlewares ...HandlerFunc) *Engine {
+func (e *Forest) Use(middlewares ...HandlerFunc) *Forest {
 	e.rootGroup.Use(middlewares...)
 	e.rebuild(e.notFoundRoute)
 	e.rebuild(e.methodNotAllowedRoute)
 	return e
 }
 
-func (e *Engine) Mount(prefix string, child *Engine) {
+func (e *Forest) Mount(prefix string, child *Forest) {
 	e.rootGroup.Mount(prefix, child.rootGroup)
 }
 
-func (e *Engine) MountGroup(prefix string, child *Group) {
+func (e *Forest) MountGroup(prefix string, child *Group) {
 	e.rootGroup.Mount(prefix, child)
 }
 
-func (e *Engine) NotFound(h HandlerFunc) *Route {
+func (e *Forest) NotFound(h HandlerFunc) *Route {
 	if e.notFoundRoute == nil {
 		e.notFoundRoute = &Route{Handlers: make([]HandlerFunc, 1), group: e.rootGroup}
 	}
@@ -188,7 +188,7 @@ func (e *Engine) NotFound(h HandlerFunc) *Route {
 	return e.notFoundRoute
 }
 
-func (e *Engine) MethodNotAllowed(h HandlerFunc) *Route {
+func (e *Forest) MethodNotAllowed(h HandlerFunc) *Route {
 	if e.methodNotAllowedRoute == nil {
 		e.methodNotAllowedRoute = &Route{Handlers: make([]HandlerFunc, 1), group: e.rootGroup}
 	}
@@ -197,7 +197,7 @@ func (e *Engine) MethodNotAllowed(h HandlerFunc) *Route {
 	return e.methodNotAllowedRoute
 }
 
-func (e *Engine) Context(w http.ResponseWriter, r *http.Request) *context {
+func (e *Forest) Context(w http.ResponseWriter, r *http.Request) *context {
 	c := e.contextPool.Get().(*context)
 	c.reset(r, w)
 	defer e.contextPool.Put(c)
@@ -218,11 +218,11 @@ func (e *Engine) Context(w http.ResponseWriter, r *http.Request) *context {
 	return c
 }
 
-func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (e *Forest) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	e.Context(w, r).Next()
 }
 
-func (e *Engine) configure(addr string) error {
+func (e *Forest) configure(addr string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.debug {
@@ -238,16 +238,16 @@ func (e *Engine) configure(addr string) error {
 	return nil
 }
 
-func (e *Engine) Start(addr string) error {
+func (e *Forest) Start(addr string) error {
 	e.configure(addr)
 	return e.Server.ListenAndServe()
 }
 
-func (e *Engine) StartTLS(addr string, certFile, keyFile string) error {
+func (e *Forest) StartTLS(addr string, certFile, keyFile string) error {
 	e.configure(addr)
 	return e.Server.ListenAndServeTLS(certFile, keyFile)
 }
 
-func (e *Engine) Shutdown(ctx stdcontext.Context) error {
+func (e *Forest) Shutdown(ctx stdcontext.Context) error {
 	return e.Server.Shutdown(ctx)
 }

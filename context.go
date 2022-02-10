@@ -16,6 +16,7 @@ type H map[string]interface{}
 
 type Context interface {
 	Logger() Logger
+	Route() *Route
 	Request() *http.Request
 	Response() *Response
 
@@ -28,13 +29,13 @@ type Context interface {
 	Param(string) string
 	Params() map[string]string
 
-	FormParam(string) string
+	FormParam(string, ...string) string
 	FormParams() (url.Values, error)
 
-	QueryParam(string) string
+	QueryParam(string, ...string) string
 	QueryParams() url.Values
 
-	Cookie(string) (*http.Cookie, error)
+	Cookie(string, ...*http.Cookie) (*http.Cookie, error)
 	Cookies() []*http.Cookie
 	SetCookie(*http.Cookie)
 
@@ -69,6 +70,10 @@ type context struct {
 	query    url.Values
 	route    *Route
 	index    int
+}
+
+func (c *context) Route() *Route {
+	return c.route
 }
 
 func (c *context) Request() *http.Request {
@@ -112,8 +117,12 @@ func (c *context) Params() map[string]string {
 	return params
 }
 
-func (c *context) FormParam(key string) string {
-	return c.request.FormValue(key)
+func (c *context) FormParam(key string, defaults ...string) string {
+	v := c.request.FormValue(key)
+	if v == "" && len(defaults) > 0 {
+		return defaults[0]
+	}
+	return v
 }
 
 func (c *context) FormParams() (url.Values, error) {
@@ -123,8 +132,12 @@ func (c *context) FormParams() (url.Values, error) {
 	return c.request.Form, nil
 }
 
-func (c *context) QueryParam(key string) string {
-	return c.QueryParams().Get(key)
+func (c *context) QueryParam(key string, defaults ...string) string {
+	v := c.QueryParams().Get(key)
+	if v == "" && len(defaults) > 0 {
+		return defaults[0]
+	}
+	return v
 }
 
 func (c *context) QueryParams() url.Values {
@@ -134,8 +147,15 @@ func (c *context) QueryParams() url.Values {
 	return c.query
 }
 
-func (c *context) Cookie(name string) (*http.Cookie, error) {
-	return c.request.Cookie(name)
+func (c *context) Cookie(name string, defaults ...*http.Cookie) (*http.Cookie, error) {
+	v, err := c.request.Cookie(name)
+	if err != nil {
+		return nil, err
+	}
+	if v == nil && len(defaults) > 0 {
+		return defaults[0], nil
+	}
+	return v, nil
 }
 
 func (c *context) Cookies() []*http.Cookie {
@@ -206,7 +226,7 @@ func (c *context) Status(code int) error {
 }
 
 func (c *context) URL(name string, args ...interface{}) string {
-	return c.route.Engine().URL(name, args...)
+	return c.route.Forest().URL(name, args...)
 }
 
 func (c *context) Redirect(code int, url string, args ...interface{}) error {
@@ -214,7 +234,7 @@ func (c *context) Redirect(code int, url string, args ...interface{}) error {
 		return nil
 	}
 	if !strings.HasPrefix(url, "/") && !strings.Contains(url, "://") {
-		url = c.route.Engine().URL(url, args...)
+		url = c.route.Forest().URL(url, args...)
 	}
 	c.response.Header().Set("Location", url)
 	c.response.WriteHeader(code)

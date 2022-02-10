@@ -8,14 +8,14 @@ import (
 )
 
 type (
-	Param struct {
+	routeParam struct {
 		start int
 		end   int
 		name  string
 	}
 	Route struct {
 		group    *Group
-		pnames   []Param
+		pnames   []routeParam
 		Name     string        `json:"name"`
 		Desc     string        `json:"desc"`
 		Host     string        `json:"host"`
@@ -78,8 +78,8 @@ func (r *Route) Named(name string, desc ...string) *Route {
 	return r
 }
 
-func (r *Route) Engine() *Engine {
-	return r.group.engine
+func (r *Route) Forest() *Forest {
+	return r.group.forest
 }
 
 func (r *Route) Logger() Logger {
@@ -116,7 +116,7 @@ func (r *Route) ErrorHandler(err error, c Context) {
 }
 
 func (r *Route) NotFoundHandler(c Context) error {
-	return r.group.engine.notFoundRoute.Handle(c)
+	return r.group.forest.notFoundRoute.Handle(c)
 }
 
 func (r *Route) Handle(c Context) error {

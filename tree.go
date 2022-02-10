@@ -194,7 +194,7 @@ func (s *node) insert(route *Route) {
 				ptype = params[1]
 			}
 			// route.pnames = append(route.pnames, pname)
-			route.pnames = append(route.pnames, Param{start: start, end: e + 1, name: pname})
+			route.pnames = append(route.pnames, routeParam{start: start, end: e + 1, name: pname})
 			if e == l-1 {
 				root = root.insertParam(pname, ptype, route)
 			} else {
@@ -217,7 +217,7 @@ func (s *node) insert(route *Route) {
 			}
 			pname := path[start+1 : e]
 			// route.pnames = append(route.pnames, pname)
-			route.pnames = append(route.pnames, Param{start: start, end: e, name: pname})
+			route.pnames = append(route.pnames, routeParam{start: start, end: e, name: pname})
 			if e >= l {
 				root = root.insertParam(pname, "", route)
 			} else {
@@ -239,7 +239,7 @@ func (s *node) insert(route *Route) {
 			if e > start+1 {
 				pname = path[start+1 : e]
 			}
-			route.pnames = append(route.pnames, Param{start: start, end: e, name: pname})
+			route.pnames = append(route.pnames, routeParam{start: start, end: e, name: pname})
 			root = root.insertParam(pname, "path", route)
 
 			lstart = len(path)
