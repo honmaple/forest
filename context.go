@@ -298,11 +298,13 @@ func (c *context) NextWith(ctx Context) (err error) {
 func (c *context) reset(r *http.Request, w http.ResponseWriter) {
 	c.request = r
 	c.response.reset(w)
-	c.pvalues = c.pvalues[:0]
 	c.index = -1
+	for i := 0; i < len(c.pvalues); i++ {
+		c.pvalues[i] = ""
+	}
 }
 
-func NewContext(r *http.Request, w http.ResponseWriter) *context {
+func NewContext(r *http.Request, w http.ResponseWriter) Context {
 	c := &context{response: NewResponse(w)}
 	c.reset(r, w)
 	return c

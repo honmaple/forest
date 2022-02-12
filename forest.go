@@ -98,7 +98,7 @@ func New(opts ...Option) *Forest {
 	}
 	e.contextPool = sync.Pool{
 		New: func() interface{} {
-			return NewContext(nil, nil)
+			return e.NewContext(nil, nil)
 		},
 	}
 	e.Logger = newLogger()
@@ -114,6 +114,13 @@ func New(opts ...Option) *Forest {
 func WrapHandler(h http.Handler) HandlerFunc {
 	return func(c Context) error {
 		h.ServeHTTP(c.Response(), c.Request())
+		return nil
+	}
+}
+
+func WrapHandlerFunc(h http.HandlerFunc) HandlerFunc {
+	return func(c Context) error {
+		h(c.Response(), c.Request())
 		return nil
 	}
 }
@@ -197,7 +204,15 @@ func (e *Forest) MethodNotAllowed(h HandlerFunc) *Route {
 	return e.methodNotAllowedRoute
 }
 
-func (e *Forest) Context(w http.ResponseWriter, r *http.Request) *context {
+func (e *Forest) NewContext(w http.ResponseWriter, r *http.Request) *context {
+	c := &context{
+		pvalues:  make([]string, e.router.maxParam),
+		response: NewResponse(w),
+	}
+	return c
+}
+
+func (e *Forest) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c := e.contextPool.Get().(*context)
 	c.reset(r, w)
 	defer e.contextPool.Put(c)
@@ -207,7 +222,8 @@ func (e *Forest) Context(w http.ResponseWriter, r *http.Request) *context {
 		path = r.URL.Path
 	}
 
-	route, found := e.router.Find(r.Host, r.Method, path, c)
+	// pass []string is faster than *context than *([]string)
+	route, found := e.router.Find(r.Host, r.Method, path, c.pvalues)
 	if found && route != nil {
 		c.route = route
 	} else if found {
@@ -215,11 +231,7 @@ func (e *Forest) Context(w http.ResponseWriter, r *http.Request) *context {
 	} else {
 		c.route = e.notFoundRoute
 	}
-	return c
-}
-
-func (e *Forest) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	e.Context(w, r).Next()
+	c.Next()
 }
 
 func (e *Forest) configure(addr string) error {

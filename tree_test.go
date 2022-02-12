@@ -100,7 +100,8 @@ func TestTree(t *testing.T) {
 	}
 	for _, p := range paths {
 		ctx := &context{}
-		if v, found := root.search(http.MethodGet, p.path, ctx); v != nil && found {
+		ctx.pvalues = make([]string, 20)
+		if v, found := root.search(http.MethodGet, p.path, ctx.pvalues); v != nil && found {
 			ctx.route = v
 			assert.Equal(p.route, v.Path, p.path)
 		} else {

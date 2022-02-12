@@ -88,12 +88,12 @@ func (s *node) insertStatic(path string, route *Route) *node {
 			child.routes = root.routes
 			child.matcher = root.matcher
 			child.children = root.children
+			child.hasNext = root.hasNext
 
 			root.kind = skind
 			root.prefix = root.prefix[:cl]
 			root.children = [akind + 1]nodes{}
-			// root.routes = make(map[string]*Route)
-			root.routes = root.routes[:0]
+			root.routes = Routes{}
 			root.addChild(child)
 
 			if cl == sl {
@@ -310,7 +310,7 @@ func (s *node) findStaticChild(l byte) *node {
 	return children[index]
 }
 
-func (s *node) matchChild(path string, c *context) *node {
+func (s *node) matchChild(path string, pindex int, pvalues []string) *node {
 	if len(path) == 0 {
 		return s
 	}
@@ -319,13 +319,13 @@ func (s *node) matchChild(path string, c *context) *node {
 	}
 
 	if child := s.findStaticChild(path[0]); child != nil {
-		if t := child.match(path, c); t != nil {
+		if t := child.match(path, pindex, pvalues); t != nil {
 			return t
 		}
 	}
 	for i := 1; i < len(s.children); i++ {
 		for _, child := range s.children[i] {
-			if t := child.match(path, c); t != nil {
+			if t := child.match(path, pindex, pvalues); t != nil {
 				return t
 			}
 		}
@@ -333,7 +333,7 @@ func (s *node) matchChild(path string, c *context) *node {
 	return nil
 }
 
-func (s *node) match(path string, c *context) *node {
+func (s *node) match(path string, pindex int, pvalues []string) *node {
 	if s.kind == skind {
 		if !strings.HasPrefix(path, s.prefix) {
 			return nil
@@ -342,7 +342,7 @@ func (s *node) match(path string, c *context) *node {
 		if len(path) == pl {
 			return s
 		}
-		return s.matchChild(path[pl:], c)
+		return s.matchChild(path[pl:], pindex, pvalues)
 	}
 
 	i := 0
@@ -351,14 +351,14 @@ func (s *node) match(path string, c *context) *node {
 		if e == -1 {
 			return nil
 		}
-		c.pvalues = append(c.pvalues, path[:i+e])
-		if e == len(path[i:]) {
+		if i+e == len(path) {
+			pvalues[pindex] = path[:i+e]
 			return s
 		}
-		if child := s.matchChild(path[i+e:], c); child != nil {
+		if child := s.matchChild(path[i+e:], pindex+1, pvalues); child != nil {
+			pvalues[pindex] = path[:i+e]
 			return child
 		}
-		c.pvalues = c.pvalues[:len(c.pvalues)-1]
 		if !loop {
 			break
 		}
@@ -367,8 +367,8 @@ func (s *node) match(path string, c *context) *node {
 	return nil
 }
 
-func (s *node) search(method, path string, c *context) (*Route, bool) {
-	root := s.match(path, c)
+func (s *node) search(method, path string, pvalues []string) (*Route, bool) {
+	root := s.match(path, 0, pvalues)
 	if root == nil || root.routes == nil {
 		return nil, false
 	}

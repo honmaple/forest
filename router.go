@@ -25,8 +25,10 @@ type (
 	}
 	Routes []*Route
 	Router struct {
-		hosts  map[string]*node
-		routes map[string]*Route
+		host     *node
+		hosts    map[string]*node
+		routes   map[string]*Route
+		maxParam int
 	}
 )
 
@@ -40,12 +42,23 @@ func (rs Routes) find(method string) *Route {
 }
 
 func (r *Router) Insert(route *Route) {
-	root, ok := r.hosts[route.Host]
-	if !ok {
-		root = &node{}
-		r.hosts[route.Host] = root
+	root := r.host
+	if route.Host != "" {
+		if r.hosts == nil {
+			r.hosts = make(map[string]*node, 0)
+		}
+		host, ok := r.hosts[route.Host]
+		if !ok {
+			host = &node{}
+			r.hosts[route.Host] = host
+		}
+		root = host
 	}
 	root.insert(route)
+
+	if l := len(route.pnames); l > r.maxParam {
+		r.maxParam = l
+	}
 
 	key := route.Host + route.Method + route.Path
 	if _, ok := r.routes[key]; !ok {
@@ -53,17 +66,17 @@ func (r *Router) Insert(route *Route) {
 	}
 }
 
-func (r *Router) Find(host, method, path string, c *context) (*Route, bool) {
+func (r *Router) Find(host, method, path string, pvalues []string) (*Route, bool) {
 	if host != "" {
 		if root, ok := r.hosts[host]; ok {
-			return root.search(method, path, c)
+			return root.search(method, path, pvalues)
 		}
 	}
-	return r.hosts[""].search(method, path, c)
+	return r.host.search(method, path, pvalues)
 }
 
 func newRouter() *Router {
-	return &Router{hosts: make(map[string]*node), routes: make(map[string]*Route)}
+	return &Router{host: &node{}, routes: make(map[string]*Route)}
 }
 
 func (r *Route) Named(name string, desc ...string) *Route {
