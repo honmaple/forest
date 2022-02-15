@@ -63,13 +63,14 @@ type Context interface {
 }
 
 type context struct {
-	response *Response
-	request  *http.Request
-	pvalues  []string
-	store    sync.Map
-	query    url.Values
-	route    *Route
-	index    int
+	response  *Response
+	request   *http.Request
+	pvalues   []string
+	storeLock sync.RWMutex
+	store     map[string]interface{}
+	query     url.Values
+	route     *Route
+	index     int
 }
 
 func (c *context) Route() *Route {
@@ -85,14 +86,20 @@ func (c *context) Response() *Response {
 }
 
 func (c *context) Set(key string, value interface{}) {
-	c.store.Store(key, value)
+	c.storeLock.Lock()
+	defer c.storeLock.Unlock()
+
+	if c.store == nil {
+		c.store = make(map[string]interface{})
+	}
+	c.store[key] = value
 }
 
 func (c *context) Get(key string) interface{} {
-	if v, ok := c.store.Load(key); ok {
-		return v
-	}
-	return nil
+	c.storeLock.RLock()
+	defer c.storeLock.RUnlock()
+
+	return c.store[key]
 }
 
 func (c *context) Param(name string) string {
@@ -296,8 +303,9 @@ func (c *context) NextWith(ctx Context) (err error) {
 }
 
 func (c *context) reset(r *http.Request, w http.ResponseWriter) {
-	c.request = r
 	c.response.reset(w)
+	c.request = r
+	c.store = nil
 	c.index = -1
 	for i := 0; i < len(c.pvalues); i++ {
 		c.pvalues[i] = ""

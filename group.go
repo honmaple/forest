@@ -54,7 +54,7 @@ func (g *Group) Host(host string, prefix string, middlewares ...HandlerFunc) *Gr
 		prefix:       g.prefix + prefix,
 		parent:       g,
 		forest:       g.forest,
-		middlewares:  mergeHandlers(g.middlewares, middlewares),
+		middlewares:  combineHandlers(g.middlewares, middlewares),
 		Logger:       g.Logger,
 		Renderer:     g.Renderer,
 		ErrorHandler: g.ErrorHandler,
@@ -82,16 +82,10 @@ func (g *Group) Add(method string, path string, handler HandlerFunc, middlewares
 	if matches, err := regexp.MatchString("^[A-Z]+$", method); !matches || err != nil {
 		panic("http method " + method + " is not valid")
 	}
-	route := &Route{
-		Host:   g.host,
-		Path:   g.prefix + path,
-		Method: method,
-		group:  g,
-	}
+	route := g.forest.addRoute(g.host, method, g.prefix+path)
+	route.group = g
 	route.Name = handlerName(handler)
-	route.Handlers = append(mergeHandlers(g.middlewares, middlewares), handler)
-
-	g.forest.addRoute(route)
+	route.Handlers = append(combineHandlers(g.middlewares, middlewares), handler)
 	return route
 }
 
@@ -207,15 +201,10 @@ func (g *Group) Mount(prefix string, child *Group) {
 		host = g.host
 	}
 	for _, r := range child.forest.Routes() {
-		route := &Route{
-			group:    r.group,
-			Host:     host,
-			Name:     r.Name,
-			Path:     g.prefix + prefix + r.Path,
-			Method:   r.Method,
-			Handlers: mergeHandlers(g.middlewares, r.Handlers),
-		}
-		g.forest.addRoute(route)
+		route := g.forest.addRoute(host, r.Method, g.prefix+prefix+r.Path)
+		route.group = r.group
+		route.Name = r.Name
+		route.Handlers = combineHandlers(g.middlewares, r.Handlers)
 	}
 }
 

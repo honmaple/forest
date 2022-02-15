@@ -16,12 +16,12 @@ type (
 	Route struct {
 		group    *Group
 		pnames   []routeParam
-		Name     string        `json:"name"`
-		Desc     string        `json:"desc"`
-		Host     string        `json:"host"`
-		Path     string        `json:"path"`
-		Method   string        `json:"method"`
-		Handlers []HandlerFunc `json:"-"`
+		Name     string
+		Desc     string
+		Host     string
+		Path     string
+		Method   string
+		Handlers []HandlerFunc
 	}
 	Routes []*Route
 	Router struct {
@@ -41,18 +41,29 @@ func (rs Routes) find(method string) *Route {
 	return nil
 }
 
-func (r *Router) Insert(route *Route) {
+func (r *Router) Insert(host, method, path string) *Route {
+	key := host + method + path
+	if route, ok := r.routes[key]; ok {
+		return route
+	}
+
 	root := r.host
-	if route.Host != "" {
+	if host != "" {
 		if r.hosts == nil {
 			r.hosts = make(map[string]*node, 0)
 		}
-		host, ok := r.hosts[route.Host]
+		h, ok := r.hosts[host]
 		if !ok {
-			host = &node{}
-			r.hosts[route.Host] = host
+			h = &node{}
+			r.hosts[host] = h
 		}
-		root = host
+		root = h
+	}
+
+	route := &Route{
+		Host:   host,
+		Method: method,
+		Path:   path,
 	}
 	root.insert(route)
 
@@ -60,22 +71,25 @@ func (r *Router) Insert(route *Route) {
 		r.maxParam = l
 	}
 
-	key := route.Host + route.Method + route.Path
-	if _, ok := r.routes[key]; !ok {
-		r.routes[key] = route
-	}
+	r.routes[key] = route
+	return route
 }
 
-func (r *Router) Find(host, method, path string, pvalues []string) (*Route, bool) {
+func (r *Router) Find(host, method, path string, pvalues []string) (route *Route, found bool) {
+	root := r.host
 	if host != "" {
-		if root, ok := r.hosts[host]; ok {
-			return root.search(method, path, pvalues)
+		if h, ok := r.hosts[host]; ok {
+			root = h
 		}
 	}
-	return r.host.search(method, path, pvalues)
+	n := root.find(path, 0, pvalues)
+	if n == nil || n.routes == nil {
+		return nil, false
+	}
+	return n.routes.find(method), len(n.routes) > 0
 }
 
-func newRouter() *Router {
+func NewRouter() *Router {
 	return &Router{host: &node{}, routes: make(map[string]*Route)}
 }
 

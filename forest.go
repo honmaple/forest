@@ -62,7 +62,7 @@ func handlerName(h HandlerFunc) string {
 	return t.String()
 }
 
-func mergeHandlers(m1 []HandlerFunc, m2 []HandlerFunc) []HandlerFunc {
+func combineHandlers(m1 []HandlerFunc, m2 []HandlerFunc) []HandlerFunc {
 	m := make([]HandlerFunc, 0, len(m1)+len(m2))
 	m = append(m, m1...)
 	m = append(m, m2...)
@@ -90,7 +90,7 @@ func Debug() Option {
 
 func New(opts ...Option) *Forest {
 	e := &Forest{
-		router: newRouter(),
+		router: NewRouter(),
 	}
 	e.rootGroup = &Group{
 		forest:      e,
@@ -125,8 +125,8 @@ func WrapHandlerFunc(h http.HandlerFunc) HandlerFunc {
 	}
 }
 
-func (e *Forest) addRoute(route *Route) {
-	e.router.Insert(route)
+func (e *Forest) addRoute(host, method, path string) *Route {
+	return e.router.Insert(host, method, path)
 }
 
 func (e *Forest) rebuild(route *Route) {
