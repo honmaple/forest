@@ -3,7 +3,6 @@ package forest
 import (
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 )
 
@@ -16,8 +15,6 @@ type (
 		matcher  Matcher
 		children [akind + 1]nodes
 		hasChild bool
-		index    int
-		parent   *node
 	}
 	nodes []*node
 )
@@ -27,20 +24,6 @@ const (
 	pkind             // path with params
 	akind             // path with anything
 )
-
-func (ns nodes) Sort()         { sort.Sort(ns) }
-func (ns nodes) Len() int      { return len(ns) }
-func (ns nodes) Swap(i, j int) { ns[i], ns[j] = ns[j], ns[i] }
-func (ns nodes) Less(i, j int) bool {
-	ni := ns[i]
-	nj := ns[j]
-	switch ni.kind {
-	case skind:
-		return ni.prefix[0] < nj.prefix[0]
-	default:
-		return false
-	}
-}
 
 func isNumeric(a byte) bool {
 	return a >= '0' && a <= '9'
@@ -257,8 +240,7 @@ func (s *node) addRoute(route *Route) {
 	if route == nil {
 		return
 	}
-	v := s.routes.find(route.Method)
-	if v != nil {
+	if v := s.routes.find(route.Method); v != nil {
 		// panic("forest: path '" + route.Path + "' conflicts with existing route '" + v.Path + "'")
 	} else {
 		s.routes = append(s.routes, route)
@@ -273,10 +255,8 @@ func (s *node) addChild(child *node) {
 		s.children[skind][child.prefix[0]] = child
 	} else {
 		s.children[child.kind] = append(s.children[child.kind], child)
-		child.index = len(s.children[child.kind]) - 1
 	}
 	s.hasChild = true
-	child.parent = s
 }
 
 func (s *node) findParamChild(kind kind, ptype string, l byte) *node {
