@@ -19,6 +19,7 @@ func TestTree(t *testing.T) {
 		"/path/test",
 		"/path/{var1:int}",
 		"/path/{var1}",
+		"/path/{var1:int}/c/2/3/{var2}/4/5/6/{var3}",
 		"/path/{var1:int}-{var2:int}",
 		"/path/{var1}/{var2:int}",
 		"/path/{var1:[0-9]+}/regex",
@@ -45,6 +46,13 @@ func TestTree(t *testing.T) {
 		{
 			"/path/1", "/path/{var1:int}",
 			map[string]string{"var1": "1"},
+		},
+		{
+			"/path/1/c/2/3/s/4/5/6/hello", "/path/{var1:int}/c/2/3/{var2}/4/5/6/{var3}",
+			map[string]string{"var1": "1", "var2": "s", "var3": "hello"},
+		},
+		{
+			"/path/1/c/2/3/s/4/5/7/hello", "nil", nil,
 		},
 		{
 			"/path/s", "/path/{var1}",
@@ -97,6 +105,10 @@ func TestTree(t *testing.T) {
 			"/path3/pre/1/4/c", "/path3/pre*var1",
 			map[string]string{"var1": "/1/4/c"},
 		},
+		{
+			"/path3/1/4/test", "/path3/*var1/test",
+			map[string]string{"var1": "1/4"},
+		},
 	}
 	for _, p := range paths {
 		ctx := &context{}
@@ -113,6 +125,12 @@ func TestTree(t *testing.T) {
 			assert.Equal(p.params, params, p.path)
 		} else {
 			assert.Nil(p.params)
+		}
+		if ctx.route == nil {
+			continue
+		}
+		for i := len(ctx.route.pnames); i < len(ctx.pvalues); i++ {
+			assert.Equal("", ctx.pvalues[i], p.path)
 		}
 	}
 }

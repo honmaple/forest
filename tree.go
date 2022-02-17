@@ -9,12 +9,13 @@ import (
 type (
 	kind uint8
 	node struct {
-		kind     kind
-		prefix   string
-		routes   Routes
-		matcher  Matcher
-		children [akind + 1]nodes
-		hasChild bool
+		kind          kind
+		prefix        string
+		routes        Routes
+		matcher       Matcher
+		children      [akind + 1]nodes
+		hasChild      bool
+		hasParamChild bool
 	}
 	nodes []*node
 )
@@ -76,6 +77,7 @@ func (s *node) insertStatic(path string, route *Route) *node {
 			child.matcher = root.matcher
 			child.children = root.children
 			child.hasChild = root.hasChild
+			child.hasParamChild = root.hasParamChild
 
 			root.kind = skind
 			root.prefix = root.prefix[:cl]
@@ -223,10 +225,12 @@ func (s *node) insert(route *Route) {
 				pname = path[start+1 : e]
 			}
 			route.pnames = append(route.pnames, routeParam{start: start, end: e, name: pname})
-			root = root.insertParam(pname, "path", route)
-
-			lstart = len(path)
-			start = lstart
+			if e >= l {
+				root = root.insertParam(pname, "path", route)
+			} else {
+				root = root.insertParam(pname, "path", nil)
+			}
+			lstart, start = e, e
 		default:
 			start++
 		}
@@ -255,6 +259,7 @@ func (s *node) addChild(child *node) {
 		s.children[skind][child.prefix[0]] = child
 	} else {
 		s.children[child.kind] = append(s.children[child.kind], child)
+		s.hasParamChild = true
 	}
 	s.hasChild = true
 }
@@ -283,7 +288,6 @@ func (s *node) find(path string, paramIndex int, paramValues []string) (result *
 		search = path
 		pindex = paramIndex
 	)
-LOOP:
 	for {
 		e, loop := 0, false
 		switch root.kind {
@@ -302,40 +306,48 @@ LOOP:
 			if e <= 0 {
 				return
 			}
-			pindex++
+			paramValues[paramIndex] = path[:len(path)-len(search)+e]
+			paramIndex++
 		}
-		search = search[e:]
-		if len(search) == 0 {
+		if len(search) == e {
 			result = root
-			break
+			return
 		}
 
 		if !root.hasChild {
-			return nil
+			break
 		}
 
+		search = search[e:]
 		if child := root.findStaticChild(search[0]); child != nil {
-			if result = child.find(search, pindex, paramValues); result != nil {
-				break LOOP
+			// avoid recursion when no param children
+			if !root.hasParamChild && !loop {
+				root = child
+				path = search
+				continue
+			}
+			if result = child.find(search, paramIndex, paramValues); result != nil {
+				return
 			}
 		}
 		for i := 1; i < len(root.children); i++ {
 			for _, child := range root.children[i] {
-				if result = child.find(search, pindex, paramValues); result != nil {
-					break LOOP
+				if result = child.find(search, paramIndex, paramValues); result != nil {
+					return
 				}
 			}
 		}
 		if loop {
-			pindex--
+			paramIndex--
 			continue
 		}
-		return nil
+		break
 	}
-	if result != nil && paramIndex < pindex {
-		paramValues[paramIndex] = path[:len(path)-len(search)]
+	// no node found, reset params values
+	for ; pindex <= paramIndex; pindex++ {
+		paramValues[pindex] = ""
 	}
-	return
+	return nil
 }
 
 func (s *node) Print(l int) {

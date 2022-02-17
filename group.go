@@ -114,7 +114,7 @@ func (g *Group) POST(path string, handler HandlerFunc, middlewares ...HandlerFun
 }
 
 func (g *Group) PUT(path string, handler HandlerFunc, middlewares ...HandlerFunc) *Route {
-	return g.Add(http.MethodPost, path, handler, middlewares...)
+	return g.Add(http.MethodPut, path, handler, middlewares...)
 }
 
 func (g *Group) PATCH(path string, handler HandlerFunc, middlewares ...HandlerFunc) *Route {

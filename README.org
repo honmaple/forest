@@ -78,8 +78,9 @@
       router.GET("/posts/prefix:var", handler)
       // /posts/prefixtest           {"var:end": "test"}
       router.GET("/posts/prefix:var:end", handler)
-      // /posts/test                 {"var": "test"}
-      // /posts/test/1               {"var": "test/1"}
+      // /posts/test                 not match
+      // /posts/test/1               not match
+      // /posts/test/1/test          {"var": "test/1"}
       router.GET("/posts/*var/test", handler)
       // /posts/test                 not match
       // /posts/test-123             {"var": "test", "var1": "123"}
