@@ -1,103 +1,96 @@
 package middleware
 
 import (
+	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"time"
 
-	"bytes"
-	"io"
-	"strconv"
-	"sync"
-
 	"github.com/honmaple/forest"
-	"github.com/valyala/fasttemplate"
+)
+
+const (
+	greenColor  = "\033[97;42m"
+	cyanColor   = "\033[97;46m"
+	yellowColor = "\033[90;43m"
+	redColor    = "\033[97;41m"
+	resetColor  = "\033[0m"
 )
 
 type (
 	LoggerConfig struct {
-		Skipper    Skipper
-		Format     string
-		TimeFormat string
-		template   *fasttemplate.Template
-		bufferPool sync.Pool
+		Skipper   Skipper
+		Output    io.Writer
+		Formatter func() LoggerFormatter
+	}
+	LoggerFormatter interface {
+		Reset()
+		Format(*http.Request, http.ResponseWriter, int) string
+	}
+	loggerFormatter struct {
+		start time.Time
 	}
 )
 
 var (
 	DefaultLoggerConfig = LoggerConfig{
-		Format:     "[${time_local}] ${status} ${method} ${path} (${remote_addr}) ${latency_human}",
-		TimeFormat: "2006-01-02 15:04:05.00000",
+		Output:    os.Stdout,
+		Formatter: newLoggerFormatter,
 	}
 )
+
+func newLoggerFormatter() LoggerFormatter {
+	return &loggerFormatter{start: time.Now()}
+}
+
+func (f *loggerFormatter) Reset() {
+	f.start = time.Now()
+}
+
+func (f *loggerFormatter) Format(req *http.Request, resp http.ResponseWriter, status int) string {
+	statusColor := greenColor
+	if status > 300 && status < 400 {
+		statusColor = cyanColor
+	} else if status >= 400 && status < 500 {
+		statusColor = yellowColor
+	} else if status >= 500 {
+		statusColor = redColor
+	}
+
+	end := time.Now()
+	return fmt.Sprintf("[%s] %s %d %s %s %s (%s) %s\n",
+		f.start.Format("2006-01-02 15:04:05.00000"),
+		statusColor, status, resetColor,
+		req.Method,
+		req.URL.Path,
+		req.RemoteAddr,
+		end.Sub(f.start).String(),
+	)
+}
 
 func Logger() forest.HandlerFunc {
 	return LoggerWithConfig(DefaultLoggerConfig)
 }
 
 func LoggerWithConfig(config LoggerConfig) forest.HandlerFunc {
-	if config.Format == "" {
-		config.Format = DefaultLoggerConfig.Format
+	if config.Output == nil {
+		config.Output = DefaultLoggerConfig.Output
 	}
-	if config.TimeFormat == "" {
-		config.TimeFormat = DefaultLoggerConfig.TimeFormat
+	if config.Formatter == nil {
+		config.Formatter = DefaultLoggerConfig.Formatter
 	}
-	config.template = fasttemplate.New(config.Format, "${", "}")
-	config.bufferPool = sync.Pool{
-		New: func() interface{} {
-			return bytes.NewBuffer(make([]byte, 256))
-		},
-	}
+	f := config.Formatter()
 	return func(c forest.Context) error {
 		if config.Skipper != nil && config.Skipper(c) {
 			return c.Next()
 		}
-		start := time.Now()
+		f.Reset()
+
 		req := c.Request()
 		err := c.Next()
-		res := c.Response()
-		stop := time.Now()
-
-		buf := config.bufferPool.Get().(*bytes.Buffer)
-		buf.Reset()
-		defer config.bufferPool.Put(buf)
-
-		if _, err := config.template.ExecuteFunc(buf, func(w io.Writer, tag string) (int, error) {
-			switch tag {
-			case "remote_addr":
-				return buf.WriteString(req.RemoteAddr)
-			case "time_local":
-				return buf.WriteString(time.Now().Format(config.TimeFormat))
-			case "host":
-				return buf.WriteString(req.Host)
-			case "uri":
-				return buf.WriteString(req.RequestURI)
-			case "method":
-				return buf.WriteString(req.Method)
-			case "path":
-				p := req.URL.Path
-				if p == "" {
-					p = "/"
-				}
-				return buf.WriteString(p)
-			case "protocol":
-				return buf.WriteString(req.Proto)
-			case "referer":
-				return buf.WriteString(req.Referer())
-			case "user_agent":
-				return buf.WriteString(req.UserAgent())
-			case "status":
-				return buf.WriteString(strconv.Itoa(res.Status))
-			case "latency":
-				l := stop.Sub(start)
-				return buf.WriteString(strconv.FormatInt(int64(l), 10))
-			case "latency_human":
-				return buf.WriteString(stop.Sub(start).String())
-			default:
-			}
-			return 0, nil
-		}); err != nil {
-			return err
-		}
-		c.Logger().Println(buf.String())
+		resp := c.Response()
+		fmt.Fprint(config.Output, f.Format(req, resp, resp.Status))
 		return err
 	}
 }

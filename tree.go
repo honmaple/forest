@@ -344,7 +344,7 @@ func (s *node) find(path string, paramIndex int, paramValues []string) (result *
 		break
 	}
 	// no node found, reset params values
-	for ; pindex <= paramIndex; pindex++ {
+	for ; pindex < paramIndex; pindex++ {
 		paramValues[pindex] = ""
 	}
 	return nil
