@@ -11,10 +11,10 @@ import (
 )
 
 const (
-	greenColor  = "\033[97;42m"
-	cyanColor   = "\033[97;46m"
-	yellowColor = "\033[90;43m"
-	redColor    = "\033[97;41m"
+	greenColor  = "\033[0;32m"
+	cyanColor   = "\033[0;36m"
+	yellowColor = "\033[0;33m"
+	redColor    = "\033[0;31m"
 	resetColor  = "\033[0m"
 )
 
@@ -50,7 +50,7 @@ func (f *loggerFormatter) Reset() {
 
 func (f *loggerFormatter) Format(req *http.Request, resp http.ResponseWriter, status int) string {
 	statusColor := greenColor
-	if status > 300 && status < 400 {
+	if status >= 300 && status < 400 {
 		statusColor = cyanColor
 	} else if status >= 400 && status < 500 {
 		statusColor = yellowColor
@@ -59,12 +59,11 @@ func (f *loggerFormatter) Format(req *http.Request, resp http.ResponseWriter, st
 	}
 
 	end := time.Now()
-	return fmt.Sprintf("[%s] %s %d %s %s %s (%s) %s\n",
-		f.start.Format("2006-01-02 15:04:05.00000"),
-		statusColor, status, resetColor,
-		req.Method,
-		req.URL.Path,
+	return fmt.Sprintf("%s - [%s] \"%s %s%s %s\" %s%03d%s - %s\n",
 		req.RemoteAddr,
+		f.start.Format("02/Jan/2006 15:04:05.00000"),
+		req.Method, req.Host, req.RequestURI, req.Proto,
+		statusColor, status, resetColor,
 		end.Sub(f.start).String(),
 	)
 }

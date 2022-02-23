@@ -125,10 +125,6 @@ func WrapHandlerFunc(h http.HandlerFunc) HandlerFunc {
 	}
 }
 
-func (e *Forest) addRoute(host, method, path string) *Route {
-	return e.router.Insert(host, method, path)
-}
-
 func (e *Forest) rebuild(route *Route) {
 	rlen := len(route.Handlers)
 	if rlen > 1 {
@@ -141,6 +137,19 @@ func (e *Forest) rebuild(route *Route) {
 		handlers[len(e.middlewares)] = route.Last()
 	}
 	route.Handlers = handlers
+}
+
+func (e *Forest) addRoute(host, method, path string) *Route {
+	return e.router.Insert(host, method, path)
+}
+
+func (e *Forest) findRoute(host, method, path string, pvalues []string) *Route {
+	if r, found := e.router.Find(host, method, path, pvalues); r != nil && found {
+		return r
+	} else if found {
+		return e.methodNotAllowedRoute
+	}
+	return e.notFoundRoute
 }
 
 func (e *Forest) URL(name string, args ...interface{}) string {
@@ -221,16 +230,8 @@ func (e *Forest) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if path == "" {
 		path = r.URL.Path
 	}
-
 	// pass []string is faster than *context than *([]string)
-	route, found := e.router.Find(r.Host, r.Method, path, c.pvalues)
-	if found && route != nil {
-		c.route = route
-	} else if found {
-		c.route = e.methodNotAllowedRoute
-	} else {
-		c.route = e.notFoundRoute
-	}
+	c.route = e.findRoute(r.Host, r.Method, path, c.pvalues)
 	c.Next()
 }
 
