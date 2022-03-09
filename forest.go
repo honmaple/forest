@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"sort"
 	"sync"
 )
 
@@ -105,9 +106,7 @@ func New(opts ...Option) *Forest {
 	e.ErrorHandler = ErrorHandler
 	e.NotFound(NotFoundHandler)
 	e.MethodNotAllowed(MethodNotAllowedHandler)
-	for _, opt := range opts {
-		opt(e)
-	}
+	e.SetOptions(opts...)
 	return e
 }
 
@@ -177,6 +176,9 @@ func (e *Forest) Routes() []*Route {
 	for _, r := range e.router.routes {
 		routes = append(routes, r)
 	}
+	sort.Slice(routes, func(i, j int) bool {
+		return routes[i].Path < routes[j].Path
+	})
 	return routes
 }
 
@@ -239,7 +241,7 @@ func (e *Forest) configure(addr string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.debug {
-		for _, r := range e.router.routes {
+		for _, r := range e.Routes() {
 			debugPrint(r.String())
 		}
 		debugPrint("Listening and serving HTTP on %s\n", addr)
@@ -249,6 +251,12 @@ func (e *Forest) configure(addr string) error {
 	}
 	e.Server.Addr = addr
 	return nil
+}
+
+func (e *Forest) SetOptions(opts ...Option) {
+	for _, opt := range opts {
+		opt(e)
+	}
 }
 
 func (e *Forest) Start(addr string) error {

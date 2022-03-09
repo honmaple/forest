@@ -48,6 +48,12 @@
       // /posts/test                 {"var": "test"}
       // /posts, /posts/, /posts/1/1 not match
       router.GET("/posts/:var", handler)
+      // /posts/                     {"var": ""}
+      // /posts/1                    {"var": "1"}
+      // /posts/test                 {"var": "test"}
+      // /posts, /posts/1/1          not match
+      router.GET("/posts/:var?", handler)
+      // /posts/                     {"var": ""}
       // /posts/1                    {"var": "1"}
       // /posts/1/                   {"var": "1/"}
       // /posts/1/test/2             {"var": "1/test/2"}
@@ -57,6 +63,11 @@
       // /posts, /posts/, /posts/1/1 not match
       router.GET("/posts/{var}", handler)
       router.GET("/posts/{var:string}", handler)
+      // /posts/                     {"var": ""}
+      // /posts/1                    {"var": "1"}
+      // /posts/test                 {"var": "test"}
+      // /posts, /posts/1/1          not match
+      router.GET("/posts/{var?}", handler)
       // /posts/1                    {"var": "1"}
       // /posts/test                 not match
       router.GET("/posts/{var:int}", handler)
@@ -207,7 +218,10 @@
           return "uuid"
       }
 
-      func (s *UUIDMatcher) Match(path string) (int, bool) {
+      func (s *UUIDMatcher) Match(path string, count int, next bool) (int, bool) {
+          if count > 0 {
+              return 0, false
+          }
           if len(path) < 18 {
               return 0, false
           }
@@ -215,7 +229,7 @@
           if err != nil {
               return 0, false
           }
-          return 18, false
+          return 18, true
       }
 
       func NewUUIDMatcher(pname string, ptype string) forest.Matcher {

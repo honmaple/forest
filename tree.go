@@ -30,6 +30,11 @@ func isNumeric(a byte) bool {
 	return a >= '0' && a <= '9'
 }
 
+func isOptional(path string) bool {
+	pl := len(path)
+	return pl > 1 && path[pl-1] == '?' && path[pl-2] != '\\'
+}
+
 func commonPrefix(a, b string) int {
 	minlen := len(a)
 	if len(b) < minlen {
@@ -158,6 +163,7 @@ func (s *node) insert(route *Route) {
 		switch path[start] {
 		case '{':
 			if start > 0 && path[start-1] == '\\' {
+				start++
 				continue
 			}
 
@@ -172,16 +178,26 @@ func (s *node) insert(route *Route) {
 			}
 
 			params := strings.SplitN(path[start+1:e], ":", 2)
-			if len(params) == 1 && params[0] == "" {
+			// /path/{var:int} match /path/100 but /path/
+			// /path/{var?:int} match /path/100 and /path/
+			pname := params[0]
+			optional := isOptional(pname)
+			if optional {
+				pname = pname[:len(pname)-1]
+			}
+			if len(pname) == 0 {
 				panic("forest: route param name is missing")
 			}
-			pname := params[0]
 			ptype := "string"
 			if len(params) > 1 {
 				ptype = params[1]
 			}
 			route.pnames = append(route.pnames, routeParam{start: start, end: e + 1, name: pname})
+
 			if e == l-1 {
+				if optional || ptype == "path" {
+					root.addRoute(route)
+				}
 				root = root.insertParam(pname, ptype, route)
 			} else {
 				root = root.insertParam(pname, ptype, nil)
@@ -189,21 +205,31 @@ func (s *node) insert(route *Route) {
 			lstart, start = e+1, e+1
 		case ':':
 			if start > 0 && path[start-1] == '\\' {
+				start++
 				continue
 			}
 
 			e := start + 1
 			for ; e < l && path[e] != '/'; e++ {
 			}
-			if e == start+1 {
+			// /path/:var match /path/anyword but /path/
+			// /path/:var? match /path/anyword and /path/
+			pname := path[start+1 : e]
+			optional := isOptional(pname)
+			if optional {
+				pname = pname[:len(pname)-1]
+			}
+			if len(pname) == 0 {
 				panic("forest: route param name is missing")
 			}
 			if start > lstart {
 				root = root.insertStatic(path[lstart:start], nil)
 			}
-			pname := path[start+1 : e]
 			route.pnames = append(route.pnames, routeParam{start: start, end: e, name: pname})
 			if e >= l {
+				if optional {
+					root.addRoute(route)
+				}
 				root = root.insertParam(pname, "", route)
 			} else {
 				root = root.insertParam(pname, "", nil)
@@ -211,6 +237,7 @@ func (s *node) insert(route *Route) {
 			lstart, start = e, e
 		case '*':
 			if start > 0 && path[start-1] == '\\' {
+				start++
 				continue
 			}
 
@@ -226,6 +253,7 @@ func (s *node) insert(route *Route) {
 			}
 			route.pnames = append(route.pnames, routeParam{start: start, end: e, name: pname})
 			if e >= l {
+				root.addRoute(route)
 				root = root.insertParam(pname, "path", route)
 			} else {
 				root = root.insertParam(pname, "path", nil)
@@ -276,40 +304,45 @@ func (s *node) findParamChild(kind kind, ptype string, l byte) *node {
 }
 
 func (s *node) findStaticChild(l byte) *node {
-	if len(s.children[skind]) == 0 {
+	if v := s.children[skind]; len(v) == 0 {
 		return nil
+	} else {
+		return v[l]
 	}
-	return s.children[skind][l]
 }
 
 func (s *node) find(path string, paramIndex int, paramValues []string) (result *node) {
 	var (
 		root   = s
-		search = path
+		count  = 0
 		pindex = paramIndex
 	)
+LOOP:
 	for {
-		e, loop := 0, false
+		e, ok := 0, false
 		switch root.kind {
 		case skind:
+			if count > 0 {
+				break LOOP
+			}
 			pl := len(root.prefix)
 			// don't use strings.HasPrefix, it is slower
-			if pl <= len(search) {
-				for ; e < pl && root.prefix[e] == search[e]; e++ {
+			if pl <= len(path) {
+				for ; e < pl && root.prefix[e] == path[e]; e++ {
 				}
 			}
 			if e != pl {
 				return
 			}
 		default:
-			e, loop = root.matcher.Match(search, root.hasChild)
-			if e <= 0 {
-				return
+			e, ok = root.matcher.Match(path, count, root.hasChild)
+			if !ok {
+				break LOOP
 			}
-			paramValues[paramIndex] = path[:len(path)-len(search)+e]
+			paramValues[paramIndex] = path[:e]
 			paramIndex++
 		}
-		if len(search) == e {
+		if len(path) == e {
 			result = root
 			return
 		}
@@ -318,12 +351,13 @@ func (s *node) find(path string, paramIndex int, paramValues []string) (result *
 			break
 		}
 
-		search = search[e:]
+		search := path[e:]
 		if child := root.findStaticChild(search[0]); child != nil {
 			// avoid recursion when no param children
-			if !root.hasParamChild && !loop {
+			if !root.hasParamChild && count == 0 {
 				root = child
 				path = search
+				count = 0
 				continue
 			}
 			if result = child.find(search, paramIndex, paramValues); result != nil {
@@ -337,11 +371,8 @@ func (s *node) find(path string, paramIndex int, paramValues []string) (result *
 				}
 			}
 		}
-		if loop {
-			paramIndex--
-			continue
-		}
-		break
+		count++
+		paramIndex--
 	}
 	// no node found, reset params values
 	for ; pindex < paramIndex; pindex++ {
@@ -383,7 +414,7 @@ func newNode(kind kind, prefix string, route *Route) *node {
 type (
 	Matcher interface {
 		Name() string
-		Match(string, bool) (int, bool)
+		Match(string, int, bool) (int, bool)
 	}
 	pMatcher struct {
 		ptype string
@@ -405,49 +436,54 @@ func (p *pMatcher) Name() string {
 	return p.ptype
 }
 
-func (p *pMatcher) Match(path string, next bool) (int, bool) {
+func (p *pMatcher) Match(path string, count int, next bool) (int, bool) {
 	switch p.ptype {
 	case "":
-		return p.match(path, next)
+		return p.match(path, count, next)
 	case "int":
-		return p.matchInt(path, next)
+		return p.matchInt(path, count, next)
 	case "float":
-		return p.matchFloat(path, next)
+		return p.matchFloat(path, count, next)
 	case "string":
-		return p.matchString(path, next)
+		return p.matchString(path, count, next)
 	case "path":
-		return p.matchPath(path, next)
+		return p.matchPath(path, count, next)
 	default:
-		return p.matchRegex(path, next)
+		return p.matchRegex(path, count, next)
 	}
 }
 
-func (p *pMatcher) match(path string, next bool) (end int, loop bool) {
+func (p *pMatcher) match(path string, count int, next bool) (int, bool) {
+	if count > 0 {
+		return 0, false
+	}
+	end := 0
 	for ; end < len(path) && path[end] != '/'; end++ {
 	}
-	// no '/'
-	if end == len(path) {
-		return
-	}
-	if end == 0 || !next {
+	if end == 0 || (end < len(path) && !next) {
 		return 0, false
 	}
-	return
+	return end, true
 }
 
-func (p *pMatcher) matchInt(path string, next bool) (end int, loop bool) {
+func (p *pMatcher) matchInt(path string, count int, next bool) (int, bool) {
+	if count > 0 {
+		return 0, false
+	}
+	end := 0
 	for ; end < len(path) && isNumeric(path[end]); end++ {
 	}
-	if end == len(path) {
-		return
-	}
-	if end == 0 || !next {
+	if end == 0 || (end < len(path) && !next) {
 		return 0, false
 	}
-	return
+	return end, true
 }
 
-func (p *pMatcher) matchFloat(path string, next bool) (end int, loop bool) {
+func (p *pMatcher) matchFloat(path string, count int, next bool) (int, bool) {
+	if count > 0 {
+		return 0, false
+	}
+	end := 0
 	dot := false
 	for ; end < len(path); end++ {
 		if path[end] == '.' {
@@ -461,45 +497,49 @@ func (p *pMatcher) matchFloat(path string, next bool) (end int, loop bool) {
 			break
 		}
 	}
-	if end == len(path) {
-		return
-	}
-	if end == 0 || !next {
+	if end == 0 || (end < len(path) && !next) {
 		return 0, false
 	}
-	return
+	return end, true
 }
 
-func (p *pMatcher) matchString(path string, next bool) (end int, loop bool) {
+// Allow one or more char, /: match /anychar but /
+func (p *pMatcher) matchString(path string, count int, next bool) (int, bool) {
 	if !next {
+		end := 0
 		for ; end < len(path) && path[end] != '/'; end++ {
 		}
-		return
+		return end, len(path) == end
 	}
-	if path[0] == '/' {
-		return
+	if path[count] == '/' {
+		return 0, false
 	}
-	return 1, true
+	return count + 1, true
 }
 
-func (p *pMatcher) matchRegex(path string, next bool) (end int, loop bool) {
-	if p.regex == nil {
-		return
+func (p *pMatcher) matchRegex(path string, count int, next bool) (int, bool) {
+	if count > 0 {
+		return 0, false
 	}
+	if p.regex == nil {
+		return 0, false
+	}
+	end := 0
 	for ; end < len(path) && path[end] != '/'; end++ {
 	}
 	is := p.regex.FindStringIndex(path[:end])
 	if len(is) == 0 {
 		return 0, false
 	}
-	return is[1], false
+	return is[1], true
 }
 
-func (p *pMatcher) matchPath(path string, next bool) (int, bool) {
+// Allow empty path, such as /* match / or /anything
+func (p *pMatcher) matchPath(path string, count int, next bool) (int, bool) {
 	if !next {
-		return len(path), false
+		return len(path), true
 	}
-	return 1, true
+	return count, true
 }
 
 func paramMatcher(pname, ptype string) Matcher {

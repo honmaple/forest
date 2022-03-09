@@ -33,6 +33,8 @@ func TestTree(t *testing.T) {
 		"/path3/*var1",
 		"/path3/*var1/test",
 		"/path3/pre*var1",
+		"/path4/{var1?}",
+		"/path5/:var1?",
 	}
 	for _, url := range urls {
 		root.insert(&Route{Method: http.MethodGet, Path: url})
@@ -48,15 +50,15 @@ func TestTree(t *testing.T) {
 			map[string]string{"var1": "1"},
 		},
 		{
+			"/path/s", "/path/{var1}",
+			map[string]string{"var1": "s"},
+		},
+		{
 			"/path/1/c/2/3/s/4/5/6/hello", "/path/{var1:int}/c/2/3/{var2}/4/5/6/{var3}",
 			map[string]string{"var1": "1", "var2": "s", "var3": "hello"},
 		},
 		{
 			"/path/1/c/2/3/s/4/5/7/hello", "nil", nil,
-		},
-		{
-			"/path/s", "/path/{var1}",
-			map[string]string{"var1": "s"},
 		},
 		{
 			"/path/100/regex", "/path/{var1:[0-9]+}/regex",
@@ -76,6 +78,10 @@ func TestTree(t *testing.T) {
 		{
 			"/path/11c/s/1-1/2", "/path/{var1:path}-1/{var2:int}",
 			map[string]string{"var1": "11c/s/1", "var2": "2"},
+		},
+		{
+			"/path/1/5/", "/path/{var1:int}/{var2:int}/{var3:path}",
+			map[string]string{"var1": "1", "var2": "5", "var3": ""},
 		},
 		{
 			"/path/1/5/s/1", "/path/{var1:int}/{var2:int}/{var3:path}",
@@ -108,6 +114,26 @@ func TestTree(t *testing.T) {
 		{
 			"/path3/1/4/test", "/path3/*var1/test",
 			map[string]string{"var1": "1/4"},
+		},
+		{
+			"/path3//test", "/path3/*var1/test",
+			map[string]string{"var1": ""},
+		},
+		{
+			"/path4/", "/path4/{var1?}",
+			map[string]string{"var1": ""},
+		},
+		{
+			"/path4/test", "/path4/{var1?}",
+			map[string]string{"var1": "test"},
+		},
+		{
+			"/path5/", "/path5/:var1?",
+			map[string]string{"var1": ""},
+		},
+		{
+			"/path5/test", "/path5/:var1?",
+			map[string]string{"var1": "test"},
 		},
 	}
 	for _, p := range paths {

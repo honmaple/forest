@@ -67,6 +67,7 @@ func (r *Router) Insert(host, method, path string) *Route {
 	}
 	root.insert(route)
 
+	// maybe should check route.pnames can't be repeated
 	if l := len(route.pnames); l > r.maxParam {
 		r.maxParam = l
 	}
