@@ -23,8 +23,9 @@ type (
 
 var (
 	DefaultCorsConfig = CorsConfig{
-		AllowMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"},
-		AllowHeaders: []string{"Origin", "Content-Length", "Content-Type"},
+		AllowOrigins: []string{"*"},
+		AllowMethods: []string{http.MethodGet, http.MethodHead, http.MethodPut, http.MethodPatch, http.MethodPost, http.MethodDelete},
+		AllowHeaders: []string{"*"},
 	}
 )
 
@@ -138,6 +139,11 @@ func CorsWithConfig(config CorsConfig) forest.HandlerFunc {
 		header.Add("Vary", "Access-Control-Request-Headers")
 		for k, v := range preflightHeaders {
 			header.Set(k, v)
+		}
+		if len(config.AllowHeaders) == 0 {
+			if h := header.Get("Access-Control-Request-Headers"); h != "" {
+				header.Set("Access-Control-Allow-Headers", h)
+			}
 		}
 		return c.Status(http.StatusNoContent)
 	}

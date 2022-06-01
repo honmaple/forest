@@ -17,9 +17,14 @@ type (
 		*rootGroup
 		mu                    sync.Mutex
 		contextPool           sync.Pool
-		router                *Router
+		node                  *node
+		nodes                 map[string]*node
+		routes                map[string]*Route
+		notFound              []HandlerFunc
+		methodNotAllowed      []HandlerFunc
 		notFoundRoute         *Route
 		methodNotAllowedRoute *Route
+		maxParam              int
 		debug                 bool
 		Server                *http.Server
 	}
@@ -91,7 +96,8 @@ func Debug() Option {
 
 func New(opts ...Option) *Forest {
 	e := &Forest{
-		router: NewRouter(),
+		node:   &node{},
+		routes: make(map[string]*Route),
 	}
 	e.rootGroup = &Group{
 		forest:      e,
@@ -124,31 +130,79 @@ func WrapHandlerFunc(h http.HandlerFunc) HandlerFunc {
 	}
 }
 
-func (e *Forest) rebuild(route *Route) {
-	rlen := len(route.Handlers)
-	if rlen > 1 {
-		rlen = 1
-	}
-	handlers := make([]HandlerFunc, len(e.middlewares)+rlen)
-	copy(handlers, e.middlewares)
-
-	if rlen > 0 {
-		handlers[len(e.middlewares)] = route.Last()
-	}
-	route.Handlers = handlers
-}
-
 func (e *Forest) addRoute(host, method, path string) *Route {
-	return e.router.Insert(host, method, path)
+	key := host + method + path
+	if route, ok := e.routes[key]; ok {
+		return route
+	}
+
+	root := e.node
+	if host != "" {
+		if e.nodes == nil {
+			e.nodes = make(map[string]*node, 0)
+		}
+		h, ok := e.nodes[host]
+		if !ok {
+			h = &node{}
+			e.nodes[host] = h
+		}
+		root = h
+	}
+
+	route := &Route{
+		host:   host,
+		method: method,
+		path:   path,
+	}
+	root.insert(route)
+
+	// maybe should check route.pnames can't be repeated
+	if l := len(route.pnames); l > e.maxParam {
+		e.maxParam = l
+	}
+
+	e.routes[key] = route
+	return route
 }
 
 func (e *Forest) findRoute(host, method, path string, pvalues []string) *Route {
-	if r, found := e.router.Find(host, method, path, pvalues); r != nil && found {
-		return r
-	} else if found {
-		return e.methodNotAllowedRoute
+	root := e.node
+	if host != "" {
+		if h, ok := e.nodes[host]; ok {
+			root = h
+		}
 	}
-	return e.notFoundRoute
+	n := root.find(path, 0, pvalues)
+	if n == nil || n.routes == nil {
+		return e.notFoundRoute
+	}
+	if len(n.routes) == 0 {
+		return e.notFoundRoute
+	}
+	if result := n.routes.find(method); result != nil {
+		return result
+	}
+	return e.methodNotAllowedRoute
+}
+
+func (e *Forest) Route(name string) *Route {
+	for _, route := range e.routes {
+		if route.Name == name {
+			return route
+		}
+	}
+	return nil
+}
+
+func (e *Forest) Routes() []*Route {
+	routes := make([]*Route, 0, len(e.routes))
+	for _, r := range e.routes {
+		routes = append(routes, r)
+	}
+	sort.Slice(routes, func(i, j int) bool {
+		return routes[i].Path() < routes[j].Path()
+	})
+	return routes
 }
 
 func (e *Forest) URL(name string, args ...interface{}) string {
@@ -158,34 +212,28 @@ func (e *Forest) URL(name string, args ...interface{}) string {
 	return ""
 }
 
-func (e *Forest) Route(name string) *Route {
-	for _, r := range e.router.routes {
-		if r.Name == name {
-			return r
-		}
+func (e *Forest) NotFound(handlers ...HandlerFunc) *Route {
+	if e.notFoundRoute == nil {
+		e.notFoundRoute = &Route{}
 	}
-	return nil
+	e.notFound = handlers
+	e.notFoundRoute.handlers = combineHandlers(e.middlewares, e.notFound)
+	return e.notFoundRoute
 }
 
-func (e *Forest) Router() *Router {
-	return e.router
-}
-
-func (e *Forest) Routes() []*Route {
-	routes := make([]*Route, 0, len(e.router.routes))
-	for _, r := range e.router.routes {
-		routes = append(routes, r)
+func (e *Forest) MethodNotAllowed(handlers ...HandlerFunc) *Route {
+	if e.methodNotAllowedRoute == nil {
+		e.methodNotAllowedRoute = &Route{}
 	}
-	sort.Slice(routes, func(i, j int) bool {
-		return routes[i].Path < routes[j].Path
-	})
-	return routes
+	e.methodNotAllowed = handlers
+	e.methodNotAllowedRoute.handlers = combineHandlers(e.middlewares, e.methodNotAllowed)
+	return e.methodNotAllowedRoute
 }
 
 func (e *Forest) Use(middlewares ...HandlerFunc) *Forest {
 	e.rootGroup.Use(middlewares...)
-	e.rebuild(e.notFoundRoute)
-	e.rebuild(e.methodNotAllowedRoute)
+	e.notFoundRoute.handlers = combineHandlers(e.middlewares, e.notFound)
+	e.methodNotAllowedRoute.handlers = combineHandlers(e.middlewares, e.methodNotAllowed)
 	return e
 }
 
@@ -197,27 +245,9 @@ func (e *Forest) MountGroup(prefix string, child *Group) {
 	e.rootGroup.Mount(prefix, child)
 }
 
-func (e *Forest) NotFound(h HandlerFunc) *Route {
-	if e.notFoundRoute == nil {
-		e.notFoundRoute = &Route{Handlers: make([]HandlerFunc, 1), group: e.rootGroup}
-	}
-	e.notFoundRoute.Name = handlerName(h)
-	e.notFoundRoute.Handlers[len(e.notFoundRoute.Handlers)-1] = h
-	return e.notFoundRoute
-}
-
-func (e *Forest) MethodNotAllowed(h HandlerFunc) *Route {
-	if e.methodNotAllowedRoute == nil {
-		e.methodNotAllowedRoute = &Route{Handlers: make([]HandlerFunc, 1), group: e.rootGroup}
-	}
-	e.methodNotAllowedRoute.Name = handlerName(h)
-	e.methodNotAllowedRoute.Handlers[len(e.methodNotAllowedRoute.Handlers)-1] = h
-	return e.methodNotAllowedRoute
-}
-
 func (e *Forest) NewContext(w http.ResponseWriter, r *http.Request) *context {
 	c := &context{
-		pvalues:  make([]string, e.router.maxParam),
+		pvalues:  make([]string, e.maxParam),
 		response: NewResponse(w),
 	}
 	return c

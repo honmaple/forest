@@ -77,8 +77,8 @@ func TestGroupMiddleware(t *testing.T) {
 	}
 	g.Use(m1, m2, m3)
 	g.GET("/200", h)
-	g.GET("/404", h, m4)
-	g.GET("/405", h, m5)
+	g.GET("/404", m4, h)
+	g.GET("/405", m5, h)
 
 	c, _ := testRequest(http.MethodGet, "/group/200", r)
 	assert.Equal(t, 200, c)

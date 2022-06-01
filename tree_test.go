@@ -37,7 +37,7 @@ func TestTree(t *testing.T) {
 		"/path5/:var1?",
 	}
 	for _, url := range urls {
-		root.insert(&Route{Method: http.MethodGet, Path: url})
+		root.insert(&Route{method: http.MethodGet, path: url})
 	}
 	// root.Print(0)
 
@@ -142,7 +142,7 @@ func TestTree(t *testing.T) {
 		if n := root.find(p.path, 0, ctx.pvalues); n != nil && len(n.routes) > 0 {
 			v := n.routes.find(http.MethodGet)
 			ctx.route = v
-			assert.Equal(p.route, v.Path, p.path)
+			assert.Equal(p.route, v.Path(), p.path)
 		} else {
 			assert.Equal(p.route, "nil", p.path)
 		}

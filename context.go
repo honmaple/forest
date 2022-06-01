@@ -3,7 +3,6 @@ package forest
 import (
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -15,6 +14,7 @@ import (
 type H map[string]interface{}
 
 type Context interface {
+	Forest() *Forest
 	Logger() Logger
 	Route() *Route
 	Request() *http.Request
@@ -71,6 +71,10 @@ type context struct {
 	query     url.Values
 	route     *Route
 	index     int
+}
+
+func (c *context) Forest() *Forest {
+	return c.route.Forest()
 }
 
 func (c *context) Route() *Route {
@@ -249,36 +253,48 @@ func (c *context) Redirect(code int, url string, args ...interface{}) error {
 }
 
 func (c *context) File(file string) (err error) {
-	f, err := os.Open(file)
-	if err != nil {
-		return c.route.NotFoundHandler(c)
-	}
-	defer f.Close()
-
-	fi, _ := f.Stat()
-	if fi.IsDir() {
-		file = filepath.Join(file, "index.html")
-		f, err = os.Open(file)
-		if err != nil {
-			return c.route.NotFoundHandler(c)
-		}
-		defer f.Close()
-		if fi, err = f.Stat(); err != nil {
-			return c.route.NotFoundHandler(c)
-		}
-	}
-	http.ServeContent(c.Response(), c.Request(), fi.Name(), fi.ModTime(), f)
-	return
+	return c.FileFromFS(filepath.Base(file), http.Dir(filepath.Dir(file)))
 }
 
 func (c *context) FileFromFS(file string, fs http.FileSystem) error {
-	defer func(old string) {
-		c.request.URL.Path = old
-	}(c.request.URL.Path)
+	const indexPage = "index.html"
+	if file == "" {
+		file = indexPage
+	}
 
-	c.request.URL.Path = file
+	file = filepath.Clean(file)
+	f, err := fs.Open(file)
+	if err != nil {
+		return NotFoundHandler(c)
+	}
+	defer f.Close()
 
-	http.FileServer(fs).ServeHTTP(c.response, c.request)
+	fi, err := f.Stat()
+	if err != nil {
+		return NotFoundHandler(c)
+	}
+	url := c.Request().URL.Path
+	if fi.IsDir() {
+		if url == "" || url[len(url)-1] != '/' {
+			return c.Redirect(http.StatusMovedPermanently, url+"/")
+		}
+		index, err := fs.Open(filepath.Join(file, indexPage))
+		if err != nil {
+			return NotFoundHandler(c)
+		}
+		defer index.Close()
+
+		indexfi, err := f.Stat()
+		if err != nil {
+			return NotFoundHandler(c)
+		}
+		f, fi = index, indexfi
+	}
+	// index.html is Dir
+	if fi.IsDir() {
+		return NotFoundHandler(c)
+	}
+	http.ServeContent(c.Response(), c.Request(), fi.Name(), fi.ModTime(), f)
 	return nil
 }
 
@@ -292,11 +308,11 @@ func (c *context) Next() error {
 
 func (c *context) NextWith(ctx Context) (err error) {
 	c.index++
-	if c.index < len(c.route.Handlers) {
-		err = c.route.Handlers[c.index](ctx)
+	if c.index < len(c.route.handlers) {
+		err = c.route.handlers[c.index](ctx)
 	}
 	if err != nil {
-		c.route.ErrorHandler(err, ctx)
+		c.route.ErrorHandle(err, ctx)
 		return nil
 	}
 	return

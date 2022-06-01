@@ -125,6 +125,21 @@
       r.URL("v1.api.delete_post", "12") == r2.URL("12") == "/v1/api/posts/12"
     #+end_src
 
+*** Server Static files
+    #+begin_src go
+      r := forest.New()
+      r.GET("/static/*", func(c forest.Context) error {
+          path := filepath.Join("static", c.Param("*"))
+          return c.FileFromFS(path, http.FS(staticFS))
+      })
+      r.GET("/robots.txt", func(c forest.Context) error {
+          return c.FileFromFS("static/robots.txt", http.FS(staticFS))
+      })
+      r.GET("/favicon.ico", func(c forest.Context) error {
+          return c.FileFromFS("static/favicon.ico", http.FS(staticFS))
+      })
+    #+end_src
+
 ** Custom
 *** Custom Middleware
     #+begin_src go
@@ -239,5 +254,5 @@
       forest.RegisterURLParam("uuid", NewUUIDMatcher)
 
       router := forest.New()
-      router.GET('/api/v1/user/{pk:uuid}', handler)
+      router.GET("/api/v1/user/{pk:uuid}", handler)
     #+end_src

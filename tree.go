@@ -148,7 +148,7 @@ func (s *node) insertParam(pname, ptype string, route *Route) *node {
 
 func (s *node) insert(route *Route) {
 	root := s
-	path := route.Path
+	path := route.Path()
 
 	if path == "" {
 		path = "/"
@@ -272,11 +272,12 @@ func (s *node) addRoute(route *Route) {
 	if route == nil {
 		return
 	}
-	if v := s.routes.find(route.Method); v != nil {
-		// panic("forest: path '" + route.Path + "' conflicts with existing route '" + v.Path + "'")
-	} else {
-		s.routes = append(s.routes, route)
-	}
+	s.routes = append(s.routes, route)
+	// if r := s.routes.find(route.Method()); r != nil {
+	//	panic("forest: path '" + route.Path() + "' conflicts with existing route '" + r.Path() + "'")
+	// } else {
+	//	s.routes = append(s.routes, route)
+	// }
 }
 
 func (s *node) addChild(child *node) {
@@ -383,8 +384,8 @@ LOOP:
 
 func (s *node) Print(l int) {
 	routes := make(map[string]string)
-	for _, v := range s.routes {
-		routes[v.Method] = v.Path
+	for _, r := range s.routes {
+		routes[r.Method()] = r.Path()
 	}
 	fmt.Print(strings.Repeat(" ", l))
 	fmt.Printf("%s", s.prefix)
