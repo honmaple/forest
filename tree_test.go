@@ -35,9 +35,10 @@ func TestTree(t *testing.T) {
 		"/path3/pre*var1",
 		"/path4/{var1?}",
 		"/path5/:var1?",
+		"/path5/:var1?/1",
 	}
 	for _, url := range urls {
-		root.insert(&Route{method: http.MethodGet, path: url})
+		root.insert(url, &Route{method: http.MethodGet, path: url})
 	}
 	// root.Print(0)
 
@@ -134,6 +135,10 @@ func TestTree(t *testing.T) {
 		{
 			"/path5/test", "/path5/:var1?",
 			map[string]string{"var1": "test"},
+		},
+		{
+			"/path5//1", "/path5/:var1?/1",
+			map[string]string{"var1": ""},
 		},
 	}
 	for _, p := range paths {

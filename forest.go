@@ -154,7 +154,7 @@ func (e *Forest) addRoute(host, method, path string) *Route {
 		method: method,
 		path:   path,
 	}
-	root.insert(route)
+	root.insert(route.Path(), route)
 
 	// maybe should check route.pnames can't be repeated
 	if l := len(route.pnames); l > e.maxParam {

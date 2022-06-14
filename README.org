@@ -233,11 +233,11 @@
           return "uuid"
       }
 
-      func (s *UUIDMatcher) Match(path string, count int, next bool) (int, bool) {
-          if count > 0 {
+      func (s *UUIDMatcher) Match(path string, index int, next bool) (int, bool) {
+          if index > 0 {
               return 0, false
           }
-          if len(path) < 18 {
+          if len(path) < 18 || (!next && len(path) > 18) {
               return 0, false
           }
           _, err := uuid.Parse(path[:18])
@@ -251,7 +251,7 @@
           return &UUIDMatcher{}
       }
 
-      forest.RegisterURLParam("uuid", NewUUIDMatcher)
+      forest.RegisterRule("uuid", NewUUIDMatcher)
 
       router := forest.New()
       router.GET("/api/v1/user/{pk:uuid}", handler)
