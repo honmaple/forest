@@ -1,6 +1,8 @@
 package binder
 
 import (
+	"encoding"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strconv"
@@ -75,7 +77,32 @@ func bindData(value interface{}, dst map[string][]string, tagName string) error 
 	return nil
 }
 
+// This function is stolen from echo
+func unmarshalField(kind reflect.Kind, field reflect.Value, value string) (bool, error) {
+	switch kind {
+	case reflect.Ptr:
+		if field.IsNil() {
+			// Initialize the pointer to a nil value
+			field.Set(reflect.New(field.Type().Elem()))
+		}
+		return unmarshalField(reflect.Struct, field.Elem(), value)
+	default:
+		fieldValue := field.Addr().Interface()
+		if unmarshaler, ok := fieldValue.(encoding.TextUnmarshaler); ok {
+			return true, unmarshaler.UnmarshalText([]byte(value))
+		}
+		if unmarshaler, ok := fieldValue.(json.Unmarshaler); ok {
+			return true, unmarshaler.UnmarshalJSON([]byte(value))
+		}
+		return false, nil
+	}
+}
+
 func setField(kind reflect.Kind, field reflect.Value, value string) error {
+	if ok, err := unmarshalField(kind, field, value); ok {
+		return err
+	}
+
 	switch kind {
 	case reflect.Bool:
 		return setBoolField(value, field)
