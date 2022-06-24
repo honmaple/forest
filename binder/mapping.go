@@ -4,6 +4,7 @@ import (
 	"encoding"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
@@ -24,49 +25,55 @@ func bindData(value interface{}, dst map[string][]string, tagName string) error 
 	}
 
 	if val.Kind() != reflect.Struct {
-		return errors.New("not struct")
+		return errors.New("bind must be a struct")
 	}
 
 	t := val.Type()
 	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		tag := field.Tag.Get(tagName)
-		if tag == "" || tag == "-" {
-			continue
-		}
 		inline := false
 		omitempty := false
-		opts := strings.Split(tag, ",")
-		if len(opts) > 1 {
-			for _, flag := range opts[1:] {
-				switch flag {
-				case "omitempty":
-					omitempty = true
-				case "inline":
-					inline = true
-				}
-			}
-			tag = opts[0]
-		}
 
+		field := t.Field(i)
+		tag := field.Tag.Get(tagName)
+		if field.Anonymous {
+			if tag == "-" {
+				continue
+			}
+			if tag != "" {
+				return fmt.Errorf("anonymous struct field: %s  are not allowed set tag", field.Name)
+			}
+			inline = true
+		} else {
+			if tag == "-" {
+				continue
+			}
+			opts := strings.Split(tag, ",")
+			if len(opts) > 1 {
+				for _, flag := range opts[1:] {
+					switch flag {
+					case "omitempty":
+						omitempty = true
+					case "inline":
+						inline = true
+					}
+				}
+				tag = opts[0]
+			}
+		}
 		vfield := val.Field(i)
-		if omitempty && vfield.IsZero() {
+		if !vfield.CanSet() || (omitempty && vfield.IsZero()) {
 			continue
 		}
 
 		fieldKind := field.Type.Kind()
 		if inline && fieldKind == reflect.Struct {
-			// info := bindData(vfield.Interface(), tagName)
-			// for _, k := range info.fields {
-			//	if _, ok := values[k]; !ok {
-			//		fields = append(fields, k)
-			//		values[k] = info.values[k]
-			//	}
-			// }
+			if err := bindData(vfield.Addr().Interface(), dst, tagName); err != nil {
+				return err
+			}
 			continue
 		}
 		if tag == "" {
-			tag = strings.ToLower(field.Name)
+			tag = field.Name
 		}
 		if v, ok := dst[tag]; ok {
 			if err := setField(fieldKind, vfield, v[0]); err != nil {
