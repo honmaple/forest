@@ -23,7 +23,15 @@
                  return c.JSON(http.StatusOK, forest.H{"title": c.Param("title")})
              })
              v1.POST("/posts", func(c forest.Context) error {
-                 return c.JSON(http.StatusOK, forest.H{"title": c.Param("title")})
+                 type post struct {
+                     Title   string `json:"title"   form:"title"`
+                     Content string `json:"content" form:"content"`
+                 }
+                 p := post{}
+                 if err := c.Bind(&p); err != nil {
+                     return c.JSON(http.BadRequest, forest.H{"message": err.Error()})
+                 }
+                 return c.JSON(http.StatusOK, p)
              })
          }
 
@@ -114,15 +122,15 @@
 *** Named Route
     #+begin_src go
       r := forest.New()
-      v1 := r.Group("/v1").Named("v1")
-      api := v1.Group("/api").Named("api")
-      r1 := api.GET("/posts").Named("list_posts")
-      r2 := api.DELETE("/posts/:pk").Named("delete_post")
+      g1 := r.Group("/api").Named("g1")
+      g2 := g1.Group("/v1").Named("g2")
+      r1 := api.GET("/posts").Named("list_posts", "some description")
+      r2 := api.DELETE("/posts/:pk").Named("delete_post", "delete post with pk param")
       // result
-      r.Route("v1.api.list_posts") == r1
-      r.URL("v1.api.list_posts") == r1.URL() == "/v1/api/posts"
-      r.Route("v1.api.delete_post") == r2
-      r.URL("v1.api.delete_post", "12") == r2.URL("12") == "/v1/api/posts/12"
+      r.Route("g1.g2.list_posts") == r1
+      r.URL("g1.g2.list_posts") == r1.URL() == "/v1/api/posts"
+      r.Route("g1.g2.delete_post") == r2
+      r.URL("g1.g2.delete_post", "12") == r2.URL("12") == "/v1/api/posts/12"
     #+end_src
 
 *** Server Static files
@@ -140,6 +148,30 @@
       })
     #+end_src
 
+*** Bind Params
+    #+begin_src go
+      type Params struct {
+          Text string `query:"text" json:"text" form:"text" param:"text"`
+      }
+      p := Params{}
+      // bind query, method: not POST, PUT, PATCH
+      // bind form or json or xml, method: POST, PUT, PATCH
+      c.Bind(&p)
+      // bind params, GET /test/:text
+      c.BindParams(&p)
+      // bind other params
+      c.BindWith(&p, bind.Query)
+      c.BindWith(&p, bind.Form)
+      c.BindWith(&p, bind.MultipartForm)
+      c.BindWith(&p, bind.JSON)
+      c.BindWith(&p, bind.XML)
+      c.BindWith(&p, bind.Params)
+      c.BindWith(&p, bind.Header)
+      // custom bind tag
+      c.BindWith(&p, bind.FormBinder{"json"})
+      c.BindWith(&p, bind.QueryBinder{"json"})
+    #+end_src
+
 ** Custom
 *** Custom Middleware
     #+begin_src go
@@ -154,9 +186,9 @@
       // with group
       group := router.Group("/api/v1", MyMiddleware)
       // with special handler
-      group.GET("/", func(c forest.Context) error {
+      group.GET("/", MyMiddleware, func(c forest.Context) error {
           return nil
-      }, MyMiddleware)
+      })
     #+end_src
 
 *** Custom Logger

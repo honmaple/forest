@@ -35,18 +35,16 @@ func bindData(value interface{}, dst map[string][]string, tagName string) error 
 
 		field := t.Field(i)
 		tag := field.Tag.Get(tagName)
+		if tag == "-" {
+			continue
+		}
+
 		if field.Anonymous {
-			if tag == "-" {
-				continue
-			}
 			if tag != "" {
 				return fmt.Errorf("anonymous struct field: %s  are not allowed set tag", field.Name)
 			}
 			inline = true
 		} else {
-			if tag == "-" {
-				continue
-			}
 			opts := strings.Split(tag, ",")
 			if len(opts) > 1 {
 				for _, flag := range opts[1:] {
