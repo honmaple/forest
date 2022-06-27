@@ -11,6 +11,9 @@ import (
 )
 
 func bindData(value interface{}, dst map[string][]string, tagName string) error {
+	if value == nil || len(dst) == 0 {
+		return nil
+	}
 	val := reflect.ValueOf(value)
 
 	for val.Kind() == reflect.Ptr {
@@ -30,15 +33,18 @@ func bindData(value interface{}, dst map[string][]string, tagName string) error 
 
 	t := val.Type()
 	for i := 0; i < t.NumField(); i++ {
-		inline := false
-		omitempty := false
-
 		field := t.Field(i)
 		tag := field.Tag.Get(tagName)
 		if tag == "-" {
 			continue
 		}
 
+		vfield := val.Field(i)
+		if !vfield.CanSet() {
+			continue
+		}
+
+		inline := false
 		if field.Anonymous {
 			if tag != "" {
 				return fmt.Errorf("anonymous struct field: %s  are not allowed set tag", field.Name)
@@ -49,8 +55,6 @@ func bindData(value interface{}, dst map[string][]string, tagName string) error 
 			if len(opts) > 1 {
 				for _, flag := range opts[1:] {
 					switch flag {
-					case "omitempty":
-						omitempty = true
 					case "inline":
 						inline = true
 					}
@@ -58,13 +62,14 @@ func bindData(value interface{}, dst map[string][]string, tagName string) error 
 				tag = opts[0]
 			}
 		}
-		vfield := val.Field(i)
-		if !vfield.CanSet() || (omitempty && vfield.IsZero()) {
-			continue
-		}
-
-		fieldKind := field.Type.Kind()
-		if inline && fieldKind == reflect.Struct {
+		kind := field.Type.Kind()
+		if inline {
+			if kind == reflect.Ptr {
+				if vfield.IsNil() {
+					continue
+				}
+				vfield = vfield.Elem()
+			}
 			if err := bindData(vfield.Addr().Interface(), dst, tagName); err != nil {
 				return err
 			}
@@ -73,24 +78,32 @@ func bindData(value interface{}, dst map[string][]string, tagName string) error 
 		if tag == "" {
 			tag = field.Name
 		}
-		if v, ok := dst[tag]; ok {
-			if err := setField(fieldKind, vfield, v[0]); err != nil {
+		values, ok := dst[tag]
+		if !ok {
+			continue
+		}
+		if kind == reflect.Slice {
+			if err := setSliceField(values, vfield); err != nil {
 				return err
 			}
+			continue
+		}
+		if err := setField(kind, values[0], vfield); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
 // This function is stolen from echo
-func unmarshalField(kind reflect.Kind, field reflect.Value, value string) (bool, error) {
+func unmarshalField(kind reflect.Kind, value string, field reflect.Value) (bool, error) {
 	switch kind {
 	case reflect.Ptr:
 		if field.IsNil() {
 			// Initialize the pointer to a nil value
 			field.Set(reflect.New(field.Type().Elem()))
 		}
-		return unmarshalField(reflect.Struct, field.Elem(), value)
+		return unmarshalField(reflect.Struct, value, field.Elem())
 	default:
 		fieldValue := field.Addr().Interface()
 		if unmarshaler, ok := fieldValue.(encoding.TextUnmarshaler); ok {
@@ -103,12 +116,14 @@ func unmarshalField(kind reflect.Kind, field reflect.Value, value string) (bool,
 	}
 }
 
-func setField(kind reflect.Kind, field reflect.Value, value string) error {
-	if ok, err := unmarshalField(kind, field, value); ok {
+func setField(kind reflect.Kind, value string, field reflect.Value) error {
+	if ok, err := unmarshalField(kind, value, field); ok {
 		return err
 	}
 
 	switch kind {
+	case reflect.Ptr:
+		return setField(field.Elem().Kind(), value, field.Elem())
 	case reflect.Bool:
 		return setBoolField(value, field)
 	case reflect.Int:
@@ -185,4 +200,20 @@ func setFloatField(value string, bitSize int, field reflect.Value) error {
 		field.SetFloat(floatVal)
 	}
 	return err
+}
+
+func setSliceField(values []string, field reflect.Value) error {
+	vlen := len(values)
+	if vlen == 0 {
+		return nil
+	}
+	sliceOf := field.Type().Elem().Kind()
+	slice := reflect.MakeSlice(field.Type(), vlen, vlen)
+	for j := 0; j < vlen; j++ {
+		if err := setField(sliceOf, values[j], slice.Index(j)); err != nil {
+			return err
+		}
+	}
+	field.Set(slice)
+	return nil
 }

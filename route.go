@@ -142,5 +142,5 @@ func (r *Route) URL(args ...interface{}) string {
 }
 
 func (r *Route) String() string {
-	return fmt.Sprintf("[DEBUG] %-6s %s%-30s --> %s (%d handlers)\n", r.Method(), r.Host(), r.Path(), r.Name, len(r.Handlers()))
+	return fmt.Sprintf("[DEBUG] %-6s %s%-30s --> %-18s (%d handlers)\n", r.Method(), r.Host(), r.Path(), r.Name, len(r.Handlers()))
 }
