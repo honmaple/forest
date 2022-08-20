@@ -6,10 +6,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/honmaple/forest/render"
 )
 
 type (
 	Group struct {
+		name        string
 		host        string
 		prefix      string
 		forest      *Forest
@@ -17,14 +20,11 @@ type (
 		children    []*Group
 		middlewares []HandlerFunc
 
-		Name         string
 		Logger       Logger
-		Renderer     Renderer
+		Renderer     render.TemplateRenderer
 		ErrorHandler ErrorHandlerFunc
 	}
-	Renderer interface {
-		Render(http.ResponseWriter, string, interface{}) error
-	}
+	GroupOption func(*Group)
 )
 
 var methods = [...]string{
@@ -39,38 +39,74 @@ var methods = [...]string{
 	http.MethodTrace,
 }
 
-func (g *Group) Named(name string) *Group {
-	prefix := ""
-	if g.parent != nil && g.parent.Name != "" {
-		prefix = g.parent.Name + "."
+func (opt GroupOption) Forest() Option {
+	return func(e *Forest) {
+		opt(e.rootGroup)
 	}
-	g.Name = prefix + name
-	return g
 }
 
-func (g *Group) Host(host string, prefix string, middlewares ...HandlerFunc) *Group {
+func WithName(name string) GroupOption {
+	return func(g *Group) {
+		prefix := ""
+		if g.parent != nil && g.parent.name != "" {
+			prefix = g.parent.name + "."
+		}
+		g.name = prefix + name
+	}
+}
+
+func WithHost(host string) GroupOption {
+	return func(g *Group) {
+		g.host = host
+	}
+}
+
+func WithPrefix(prefix string) GroupOption {
+	return func(g *Group) {
+		if g.parent != nil && g.parent.prefix != "" {
+			g.prefix = g.parent.prefix + prefix
+		} else {
+			g.prefix = prefix
+		}
+	}
+}
+
+func WithMiddlewares(handlers ...HandlerFunc) GroupOption {
+	return func(g *Group) {
+		g.middlewares = combineHandlers(g.middlewares, handlers)
+	}
+}
+
+func (g *Group) SetOptions(opts ...GroupOption) {
+	for _, opt := range opts {
+		opt(g)
+	}
+}
+
+func (g *Group) Name() string {
+	return g.name
+}
+
+func (g *Group) Group(opts ...GroupOption) *Group {
 	n := &Group{
-		host:         host,
-		prefix:       g.prefix + prefix,
 		parent:       g,
+		host:         g.host,
+		prefix:       g.prefix,
 		forest:       g.forest,
-		middlewares:  combineHandlers(g.middlewares, middlewares),
+		middlewares:  combineHandlers(g.middlewares, nil),
 		Logger:       g.Logger,
 		Renderer:     g.Renderer,
 		ErrorHandler: g.ErrorHandler,
 	}
-	if g.Name != "" {
-		n.Name = fmt.Sprintf("%s.%d", g.Name, len(g.children))
+	n.SetOptions(opts...)
+	if g.name != "" && n.name == "" {
+		n.name = fmt.Sprintf("%s.%d", g.name, len(g.children))
 	}
 	if g.children == nil {
 		g.children = make([]*Group, 0)
 	}
 	g.children = append(g.children, n)
 	return n
-}
-
-func (g *Group) Group(prefix string, middlewares ...HandlerFunc) *Group {
-	return g.Host(g.host, prefix, middlewares...)
 }
 
 func (g *Group) Use(middlewares ...HandlerFunc) *Group {
@@ -167,18 +203,21 @@ func (g *Group) StaticFile(path, file string, middlewares ...HandlerFunc) *Route
 	return g.GET(path, append(middlewares, handler)...)
 }
 
-func (g *Group) Mount(prefix string, child *Group) {
+func (g *Group) Mount(child *Group, opts ...GroupOption) {
 	if g.forest == child.forest {
 		panic("forest: can't mount with same forest")
 	}
 	g.children = append(g.children, child)
+
+	n := &Group{}
+	n.SetOptions(opts...)
 
 	host := child.host
 	if host == "" || g.host != "" {
 		host = g.host
 	}
 	for _, r := range child.forest.Routes() {
-		route := g.Add(r.method, prefix+r.path, r.handlers...)
+		route := g.Add(r.method, n.prefix+r.path, r.handlers...)
 		route.host = host
 		route.group = r.group
 	}
@@ -194,13 +233,8 @@ func (g *Group) newRoute(method, path string, handlers []HandlerFunc) *Route {
 	}
 }
 
-func NewHost(host string, opts ...Option) *Group {
-	e := New(opts...)
-	e.host = host
-	return e.rootGroup
-}
-
-func NewGroup(opts ...Option) *Group {
-	e := New(opts...)
+func NewGroup(opts ...GroupOption) *Group {
+	e := New()
+	e.rootGroup.SetOptions(opts...)
 	return e.rootGroup
 }

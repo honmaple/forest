@@ -17,6 +17,14 @@ func profile() *forest.Forest {
 	return r
 }
 
+func profile1() *forest.Group {
+	r := forest.NewGroup()
+	r.GET("/pprof/", forest.WrapHandlerFunc(pprof.Index))
+	r.GET("/pprof/*", forest.WrapHandler(http.DefaultServeMux))
+	r.POST("/pprof/symbol", forest.WrapHandlerFunc(pprof.Symbol))
+	return r
+}
+
 func main() {
 	r := forest.New(forest.Debug())
 	r.Use(middleware.Recover())
@@ -25,6 +33,7 @@ func main() {
 		return c.HTML(http.StatusOK, "<h1>PPROF</h1>")
 
 	})
-	r.Mount("/debug", profile())
+	r.Mount(profile(), forest.WithPrefix("/debug"))
+	r.MountGroup(profile1(), forest.WithPrefix("/debug1"))
 	r.Start("127.0.0.1:8000")
 }

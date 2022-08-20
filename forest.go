@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -26,6 +27,7 @@ type (
 		methodNotAllowedRoute *Route
 		maxParam              int
 		debug                 bool
+		hostMatch             func(string, string) bool
 		Server                *http.Server
 	}
 	HandlerFunc      func(Context) error
@@ -86,11 +88,29 @@ func debugPrint(msg string, args ...interface{}) {
 	fmt.Fprint(os.Stdout, sprintf(msg, args...))
 }
 
-type Option func(e *Forest)
+type Option func(*Forest)
+
+func (opt Option) Group() GroupOption {
+	return func(g *Group) {
+		opt(g.forest)
+	}
+}
 
 func Debug() Option {
 	return func(e *Forest) {
 		e.debug = true
+	}
+}
+
+func HostMatch(matcher func(string, string) bool) Option {
+	return func(e *Forest) {
+		e.hostMatch = matcher
+	}
+}
+
+func Middlewares(handlers ...HandlerFunc) Option {
+	return func(e *Forest) {
+		e.middlewares = handlers
 	}
 }
 
@@ -114,6 +134,18 @@ func New(opts ...Option) *Forest {
 	e.MethodNotAllowed(MethodNotAllowedHandler)
 	e.SetOptions(opts...)
 	return e
+}
+
+func HostMatcher(host, dst string) bool {
+	c := len(host) - len(dst)
+	if c < 0 {
+		return false
+	}
+	index := strings.IndexRune(dst, '*')
+	if index < 0 {
+		return false
+	}
+	return dst[:index] == host[:index] && dst[index+1:] == host[c+index+1:]
 }
 
 func WrapHandler(h http.Handler) HandlerFunc {
@@ -165,22 +197,32 @@ func (e *Forest) addRoute(host, method, path string) *Route {
 	return route
 }
 
-func (e *Forest) findRoute(host, method, path string, pvalues []string) *Route {
-	root := e.node
-	if host != "" {
-		if h, ok := e.nodes[host]; ok {
-			root = h
+func (e *Forest) findHost(host string) *node {
+	if host != "" && len(e.nodes) > 0 {
+		if node, ok := e.nodes[host]; ok {
+			return node
+		}
+		if e.hostMatch == nil {
+			return e.node
+		}
+		for h, node := range e.nodes {
+			if e.hostMatch(host, h) {
+				return node
+			}
 		}
 	}
-	n := root.find(path, 0, pvalues)
-	if n == nil || n.routes == nil {
+	return e.node
+}
+
+func (e *Forest) findRoute(host, method, path string, params *contextParams) *Route {
+	n := e.findHost(host).find(path, params)
+	if n == nil || n.routes == nil || len(n.routes) == 0 {
 		return e.notFoundRoute
 	}
-	if len(n.routes) == 0 {
-		return e.notFoundRoute
-	}
-	if result := n.routes.find(method); result != nil {
-		return result
+	for _, route := range n.routes {
+		if route.Method() == method {
+			return route
+		}
 	}
 	return e.methodNotAllowedRoute
 }
@@ -237,17 +279,19 @@ func (e *Forest) Use(middlewares ...HandlerFunc) *Forest {
 	return e
 }
 
-func (e *Forest) Mount(prefix string, child *Forest) {
-	e.rootGroup.Mount(prefix, child.rootGroup)
+func (e *Forest) Mount(child *Forest, opts ...GroupOption) {
+	e.rootGroup.Mount(child.rootGroup, opts...)
 }
 
-func (e *Forest) MountGroup(prefix string, child *Group) {
-	e.rootGroup.Mount(prefix, child)
+func (e *Forest) MountGroup(child *Group, opts ...GroupOption) {
+	e.rootGroup.Mount(child, opts...)
 }
 
 func (e *Forest) NewContext(w http.ResponseWriter, r *http.Request) *context {
 	c := &context{
-		pvalues:  make([]string, e.maxParam),
+		params: &contextParams{
+			pvalues: make([]string, e.maxParam),
+		},
 		response: NewResponse(w),
 	}
 	return c
@@ -263,7 +307,7 @@ func (e *Forest) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		path = r.URL.Path
 	}
 	// pass []string is faster than *context than *([]string)
-	c.route = e.findRoute(r.Host, r.Method, path, c.pvalues)
+	c.route = e.findRoute(r.Host, r.Method, path, c.params)
 	c.Next()
 }
 

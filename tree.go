@@ -193,7 +193,7 @@ func (n *node) insert(path string, route *Route) {
 				rule = params[1]
 			}
 
-			route.pnames = append(route.pnames, routeParam{start: start, end: e + 1, name: pname})
+			route.pnames = append(route.pnames, routePname{start: start, end: e + 1, name: pname})
 			if e == l-1 {
 				root = root.insertParam(rule, optional, route)
 			} else {
@@ -222,7 +222,7 @@ func (n *node) insert(path string, route *Route) {
 			if start > lstart {
 				root = root.insertStatic(path[lstart:start], nil)
 			}
-			route.pnames = append(route.pnames, routeParam{start: start, end: e, name: pname})
+			route.pnames = append(route.pnames, routePname{start: start, end: e, name: pname})
 
 			if e >= l {
 				root = root.insertParam("", optional, route)
@@ -246,7 +246,7 @@ func (n *node) insert(path string, route *Route) {
 			if e > start+1 {
 				pname = path[start+1 : e]
 			}
-			route.pnames = append(route.pnames, routeParam{start: start, end: e, name: pname})
+			route.pnames = append(route.pnames, routePname{start: start, end: e, name: pname})
 			if e >= l {
 				root = root.insertParam("path", true, route)
 			} else {
@@ -298,22 +298,17 @@ func (n *node) findStaticChild(l byte) *node {
 	}
 }
 
-func (n *node) find(path string, paramIndex int, paramValues []string) (result *node) {
+func (n *node) find(path string, params *contextParams) (result *node) {
 	var (
 		root          = n
 		index         = 0
-		pindex        = paramIndex
+		pindex        = params.pindex
 		checkOptional = false
 	)
 
-LOOP:
 	for {
 		e, ok := 0, false
-		switch root.kind {
-		case skind:
-			if index > 0 {
-				break LOOP
-			}
+		if root.kind == skind {
 			pl := len(root.prefix)
 			// don't use strings.HasPrefix, it is slower
 			if pl <= len(path) {
@@ -323,24 +318,24 @@ LOOP:
 			if e != pl {
 				return
 			}
-			index++
-		default:
+		} else {
 			// if optional, match child first
 			if root.optional && !checkOptional {
 				checkOptional = true
 			} else {
 				e, ok = root.matcher.Match(path, index, root.hasChild)
 				if !ok {
-					break LOOP
+					break
 				}
-				if e == 0 {
+				if index == e {
 					index++
 				} else {
 					index = e
-					paramValues[paramIndex] = path[:e]
+					params.pvalues[params.pindex] = path[:e]
 				}
 			}
-			paramIndex++
+			// optional params value is ""
+			params.pindex++
 		}
 		if len(path) == e {
 			return root
@@ -348,26 +343,26 @@ LOOP:
 		if root.hasChild {
 			search := path[e:]
 			if child := root.findStaticChild(search[0]); child != nil {
-				if result = child.find(search, paramIndex, paramValues); result != nil {
+				if result = child.find(search, params); result != nil {
 					return
 				}
 			}
 			for i := 1; i < len(root.children); i++ {
 				for _, child := range root.children[i] {
-					if result = child.find(search, paramIndex, paramValues); result != nil {
+					if result = child.find(search, params); result != nil {
 						return
 					}
 				}
 			}
 		}
 		if root.kind > skind {
-			paramIndex--
+			params.pindex--
+		} else {
+			break
 		}
 	}
 	// no node found, reset params values
-	for ; pindex < paramIndex; pindex++ {
-		paramValues[pindex] = ""
-	}
+	params.reset(pindex)
 	return nil
 }
 

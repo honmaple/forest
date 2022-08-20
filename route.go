@@ -8,7 +8,7 @@ import (
 )
 
 type (
-	routeParam struct {
+	routePname struct {
 		start int
 		end   int
 		name  string
@@ -20,7 +20,7 @@ type (
 		path     string
 		method   string
 		group    *Group
-		pnames   []routeParam
+		pnames   []routePname
 		handlers []HandlerFunc
 	}
 	Routes []*Route
@@ -37,8 +37,8 @@ func (rs Routes) find(method string) *Route {
 
 func (r *Route) Named(name string, desc ...string) *Route {
 	prefix := ""
-	if r.group.Name != "" {
-		prefix = r.group.Name + "."
+	if r.group.Name() != "" {
+		prefix = r.group.Name() + "."
 	}
 	r.Name = prefix + name
 	if len(desc) > 0 {
@@ -65,6 +65,10 @@ func (r *Route) Method() string {
 
 func (r *Route) Handlers() []HandlerFunc {
 	return r.handlers
+}
+
+func (r *Route) Group() *Group {
+	return r.group
 }
 
 func (r *Route) Forest() *Forest {
@@ -104,21 +108,6 @@ func (r *Route) ErrorHandle(err error, c Context) {
 	}
 }
 
-// func (r *Route) NotFoundHandle(c Context) error {
-//	return r.group.forest.router.notFoundRoute.Handle(c)
-// }
-
-// func (r *Route) Handle(c Context) error {
-//	return r.Last()(c)
-// }
-
-// func (r *Route) Last() HandlerFunc {
-//	if len(r.handlers) == 0 {
-//		return nil
-//	}
-//	return r.handlers[len(r.handlers)-1]
-// }
-
 func (r *Route) URL(args ...interface{}) string {
 	if len(args) == 0 {
 		return r.path
@@ -142,5 +131,5 @@ func (r *Route) URL(args ...interface{}) string {
 }
 
 func (r *Route) String() string {
-	return fmt.Sprintf("[DEBUG] %-6s %s%-30s --> %-18s (%d handlers)\n", r.Method(), r.Host(), r.Path(), r.Name, len(r.Handlers()))
+	return fmt.Sprintf("[DEBUG] %-6s %s%-36s --> %-18s (%d handlers)\n", r.Method(), r.Host(), r.Path(), r.Name, len(r.Handlers()))
 }

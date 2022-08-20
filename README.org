@@ -17,7 +17,7 @@
              return c.HTML(http.StatusOK, "<h1>Hello Forest</h1>")
          })
 
-         v1 := r.Group("/v1")
+         v1 := r.Group(forest.WithPrefix("/api"))
          {
              v1.GET("/posts/{title}", func(c forest.Context) error {
                  return c.JSON(http.StatusOK, forest.H{"title": c.Param("title")})
@@ -35,14 +35,14 @@
              })
          }
 
-         v2 := forest.NewHost("v2.localhost:8000")
+         v2 := forest.NewGroup(forest.WithHost("v2.localhost:8000"))
          {
              v2.GET("/posts/{title}", func(c forest.Context) error {
                  return c.JSON(http.StatusOK, forest.H{"title": c.Param("title")})
              })
          }
 
-         r.Mount("", v2)
+         r.Mount(v2)
          r.Start("127.0.0.1:8000")
      }
    #+end_src
@@ -122,8 +122,8 @@
 *** Named Route
     #+begin_src go
       r := forest.New()
-      g1 := r.Group("/api").Named("g1")
-      g2 := g1.Group("/v1").Named("g2")
+      g1 := r.Group(forest.WithPrefix("/api"), forest.WithName("g1"))
+      g2 := g1.Group(forest.WithPrefix("/v1"), forest.WithName("g2"))
       r1 := api.GET("/posts").Named("list_posts", "some description")
       r2 := api.DELETE("/posts/:pk").Named("delete_post", "delete post with pk param")
       // result
@@ -184,7 +184,7 @@
       // with root
       router.Use(MyMiddleware)
       // with group
-      group := router.Group("/api/v1", MyMiddleware)
+      group := router.Group(forest.WithPrefix("/api/v1"), forest.WithMiddlewares(MyMiddleware))
       // with special handler
       group.GET("/", MyMiddleware, func(c forest.Context) error {
           return nil
@@ -201,13 +201,13 @@
           ...
           })
 
-      group := router.Group("/api/v1")
+      group := router.Group(forest.WithPrefix("/api/v1"))
       group.GET("/posts", func(c forest.Context) error {
           // c.Logger() == Logger1
           ...
           })
 
-      group := router.Group("/api/v2")
+      group := router.Group(forest.WithPrefix("/api/v2"))
       group.Logger = Logger2
       group.GET("/posts", func(c forest.Context) error {
           // c.Logger() == Logger2
@@ -229,7 +229,7 @@
       router.ErrorHandler = func(err error, c Context) {
           c.String(500, err.Error())
       }
-      group := router.Group("/api/v1")
+      group := router.Group(forest.WithPrefix("/api/v1"))
       // group only
       group.ErrorHandler = func(err error, c Context) {
           c.String(501, err.Error())
@@ -250,6 +250,16 @@
           // doing somthing
           return c.NextWith(&MyContext{c})
       }
+    #+end_src
+
+*** Custom Host Matcher
+    #+begin_src go
+      func matcher(host, dst string) bool {
+          return host == dst
+      }
+      r := forest.New(forest.HostMatch(matcher))
+      // or use internal matcher
+      r := forest.New(forest.HostMatch(forest.HostMatcher))
     #+end_src
 
 *** Custom URL Param
@@ -279,7 +289,7 @@
           return 18, true
       }
 
-      func NewUUIDMatcher(pname string, ptype string) forest.Matcher {
+      func NewUUIDMatcher(rule string) forest.Matcher {
           return &UUIDMatcher{}
       }
 

@@ -65,7 +65,7 @@ type Context interface {
 type context struct {
 	response  *Response
 	request   *http.Request
-	pvalues   []string
+	params    *contextParams
 	storeLock sync.RWMutex
 	store     map[string]interface{}
 	query     url.Values
@@ -108,8 +108,8 @@ func (c *context) Get(key string) interface{} {
 
 func (c *context) Param(name string) string {
 	for i, p := range c.route.pnames {
-		if i < len(c.pvalues) && p.name == name {
-			return c.pvalues[i]
+		if i < len(c.params.pvalues) && p.name == name {
+			return c.params.pvalues[i]
 		}
 	}
 	return ""
@@ -121,8 +121,8 @@ func (c *context) Params() map[string]string {
 	}
 	params := make(map[string]string)
 	for i, p := range c.route.pnames {
-		if i < len(c.pvalues) {
-			params[p.name] = c.pvalues[i]
+		if i < len(c.params.pvalues) {
+			params[p.name] = c.params.pvalues[i]
 		}
 	}
 	return params
@@ -323,8 +323,18 @@ func (c *context) reset(r *http.Request, w http.ResponseWriter) {
 	c.request = r
 	c.store = nil
 	c.index = -1
-	for i := 0; i < len(c.pvalues); i++ {
-		c.pvalues[i] = ""
+	c.params.reset(0)
+}
+
+type contextParams struct {
+	pindex  int
+	pvalues []string
+}
+
+func (m *contextParams) reset(pindex int) {
+	m.pindex = pindex
+	for ; pindex < len(m.pvalues); pindex++ {
+		m.pvalues[pindex] = ""
 	}
 }
 

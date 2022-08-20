@@ -21,10 +21,6 @@ const (
 	ContentTypeMultipartForm    = "multipart/form-data"
 )
 
-type Renderer interface {
-	Render(http.ResponseWriter) error
-}
-
 func writeContentType(w http.ResponseWriter, v string) {
 	header := w.Header()
 	if header.Get(ContentType) == "" {

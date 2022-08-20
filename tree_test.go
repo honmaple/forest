@@ -101,6 +101,10 @@ func TestTree(t *testing.T) {
 			map[string]string{"var1": "test", "var2": "1"},
 		},
 		{
+			"/path2/ss/test", "/path2/*/test",
+			map[string]string{"*": "ss"},
+		},
+		{
 			"/path2/s/1", "/path2/*",
 			map[string]string{"*": "s/1"},
 		},
@@ -142,9 +146,13 @@ func TestTree(t *testing.T) {
 		},
 	}
 	for _, p := range paths {
-		ctx := &context{}
-		ctx.pvalues = make([]string, 20)
-		if n := root.find(p.path, 0, ctx.pvalues); n != nil && len(n.routes) > 0 {
+		ctx := &context{
+			params: &contextParams{
+				pvalues: make([]string, 20),
+			},
+		}
+
+		if n := root.find(p.path, ctx.params); n != nil && len(n.routes) > 0 {
 			v := n.routes.find(http.MethodGet)
 			ctx.route = v
 			assert.Equal(p.route, v.Path(), p.path)
@@ -160,8 +168,8 @@ func TestTree(t *testing.T) {
 		if ctx.route == nil {
 			continue
 		}
-		for i := len(ctx.route.pnames); i < len(ctx.pvalues); i++ {
-			assert.Equal("", ctx.pvalues[i], p.path)
+		for i := len(ctx.route.pnames); i < len(ctx.params.pvalues); i++ {
+			assert.Equal("", ctx.params.pvalues[i], p.path)
 		}
 	}
 }
