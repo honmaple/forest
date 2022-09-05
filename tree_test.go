@@ -153,9 +153,8 @@ func TestTree(t *testing.T) {
 		}
 
 		if n := root.find(p.path, ctx.params); n != nil && len(n.routes) > 0 {
-			v := n.routes.find(http.MethodGet)
-			ctx.route = v
-			assert.Equal(p.route, v.Path(), p.path)
+			ctx.route = n.routes.find(http.MethodGet)
+			assert.Equal(p.route, ctx.route.Path(), p.path)
 		} else {
 			assert.Equal(p.route, "nil", p.path)
 		}

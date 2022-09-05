@@ -25,3 +25,14 @@ func Options() forest.HandlerFunc {
 		return c.Next()
 	}
 }
+
+func Skip(m forest.HandlerFunc, skips ...Skipper) forest.HandlerFunc {
+	return func(c forest.Context) error {
+		for _, skip := range skips {
+			if skip(c) {
+				return c.Next()
+			}
+		}
+		return m(c)
+	}
+}

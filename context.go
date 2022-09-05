@@ -322,6 +322,7 @@ func (c *context) reset(r *http.Request, w http.ResponseWriter) {
 	c.response.reset(w)
 	c.request = r
 	c.store = nil
+	c.query = nil
 	c.index = -1
 	c.params.reset(0)
 }
@@ -339,7 +340,7 @@ func (m *contextParams) reset(pindex int) {
 }
 
 func NewContext(r *http.Request, w http.ResponseWriter) Context {
-	c := &context{response: NewResponse(w)}
+	c := &context{response: NewResponse(w), params: &contextParams{}}
 	c.reset(r, w)
 	return c
 }
