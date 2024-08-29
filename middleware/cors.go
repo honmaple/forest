@@ -41,7 +41,7 @@ func matchSubdomain(domain, origin string) bool {
 		originScheme = origin[:index]
 		origin = origin[index+3:]
 	}
-	if domainScheme != originScheme {
+	if domainScheme != "" && domainScheme != originScheme {
 		return false
 	}
 	domains := strings.Split(domain, ".")
